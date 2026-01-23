@@ -36,7 +36,7 @@ export default function NewCall() {
     setCallStatus({ state: 'DIALING', message: 'Initiating call...' });
 
     try {
-      // Make actual API call to create the call
+      // Step 1: Create the call record
       const response = await fetch('/api/calls', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -52,15 +52,32 @@ export default function NewCall() {
 
       const callData = await response.json();
 
-      // Simulate call progress for demo (since we don't have actual Twilio)
-      setTimeout(() => setCallStatus({ state: 'NAVIGATING_MENU', message: 'Connected, navigating IVR menu...' }), 2000);
-      setTimeout(() => setCallStatus({ state: 'PROVIDING_INFO', message: 'Providing member information...' }), 4000);
-      setTimeout(() => setCallStatus({ state: 'WAITING_RESPONSE', message: 'Waiting for authorization status...' }), 6000);
-      setTimeout(() => {
-        setCallStatus({ state: 'CALL_COMPLETE', message: 'Call completed!' });
+      // Step 2: Show progress states while simulation runs
+      setCallStatus({ state: 'NAVIGATING_MENU', message: 'Connected, navigating IVR menu...' });
+
+      // Step 3: Run the actual simulation against mock IVR
+      const simulateResponse = await fetch(`/api/calls/${callData.id}/simulate`, {
+        method: 'POST',
+      });
+
+      if (!simulateResponse.ok) {
+        throw new Error('Call simulation failed');
+      }
+
+      const result = await simulateResponse.json();
+
+      // Step 4: Show completion status based on outcome
+      if (result.call.status === 'completed') {
+        const outcomeMessage = result.call.extracted_status
+          ? `Auth ${result.call.extracted_auth_number}: ${result.call.extracted_status}`
+          : 'No authorization found';
+        setCallStatus({ state: 'CALL_COMPLETE', message: `Call completed! ${outcomeMessage}` });
         // Navigate to call detail after a moment
-        setTimeout(() => navigate(`/calls/${callData.id}`), 1500);
-      }, 8000);
+        setTimeout(() => navigate(`/calls/${callData.id}`), 2000);
+      } else {
+        setCallStatus({ state: 'CALL_FAILED', message: 'Call failed: ' + (result.call.outcome || 'Unknown error') });
+        setSubmitting(false);
+      }
     } catch (error) {
       setCallStatus({ state: 'CALL_FAILED', message: 'Call failed: ' + error.message });
       setSubmitting(false);

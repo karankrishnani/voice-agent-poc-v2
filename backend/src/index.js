@@ -675,6 +675,144 @@ app.post('/api/webhooks/twilio', (req, res) => {
   }
 });
 
+// POST /api/calls/:id/simulate - Simulate a call against mock IVR (for testing without Twilio)
+app.post('/api/calls/:id/simulate', async (req, res) => {
+  try {
+    const call = queryOne('SELECT * FROM calls WHERE id = ? OR call_sid = ?', [req.params.id, req.params.id]);
+    if (!call) {
+      return res.status(404).json({ error: 'Call not found' });
+    }
+
+    // Get member info
+    const member = queryOne('SELECT * FROM members WHERE member_id = ?', [call.member_id]);
+    if (!member) {
+      return res.status(404).json({ error: 'Member not found' });
+    }
+
+    // Update status to in_progress
+    db.run("UPDATE calls SET status = 'in_progress' WHERE id = ?", [call.id]);
+    saveDatabase();
+
+    // Simulate the call flow
+    const mockIvrUrl = process.env.MOCK_IVR_URL || 'http://localhost:3002';
+    const transcript = [];
+    const startTime = Date.now();
+
+    try {
+      // Step 1: Welcome menu
+      transcript.push({ speaker: 'IVR', text: 'Thank you for calling ABC Insurance. For prior authorization, press 2.' });
+      transcript.push({ speaker: 'Agent', text: '*pressed 2*' });
+
+      // Step 2: Prior auth menu
+      transcript.push({ speaker: 'IVR', text: 'You\'ve reached prior authorization. To check the status of an existing authorization, press 1.' });
+      transcript.push({ speaker: 'Agent', text: '*pressed 1*' });
+
+      // Step 3: Collect member ID
+      transcript.push({ speaker: 'IVR', text: 'Please enter or say your 9-digit member ID.' });
+      transcript.push({ speaker: 'Agent', text: `${member.member_id}` });
+
+      // Step 4: Collect DOB
+      const dobFormatted = member.date_of_birth.replace(/-/g, '');
+      transcript.push({ speaker: 'IVR', text: 'Please enter or say the patient\'s date of birth as 8 digits.' });
+      transcript.push({ speaker: 'Agent', text: dobFormatted });
+
+      // Step 5: Collect CPT code
+      transcript.push({ speaker: 'IVR', text: 'Please enter the CPT procedure code you\'re inquiring about.' });
+      transcript.push({ speaker: 'Agent', text: call.cpt_code_queried || '27447' });
+
+      // Step 6: Lookup result - query mock IVR endpoint
+      const lookupResponse = await fetch(`${mockIvrUrl}/lookup-auth?memberId=${member.member_id}&dob=${dobFormatted}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `Digits=${call.cpt_code_queried || '27447'}`
+      });
+
+      const twimlResponse = await lookupResponse.text();
+
+      // Parse the TwiML response to extract the result
+      let outcome = 'auth_not_found';
+      let extractedAuthNumber = null;
+      let extractedStatus = null;
+      let extractedValidThrough = null;
+      let ivrResponseText = 'No authorization found for this member and procedure code.';
+
+      // Check for approved auth
+      const approvedMatch = twimlResponse.match(/Authorization (PA[\d-]+) for procedure code (\d+) is approved through ([^.]+)/);
+      if (approvedMatch) {
+        outcome = 'auth_found';
+        extractedAuthNumber = approvedMatch[1];
+        extractedStatus = 'approved';
+        extractedValidThrough = approvedMatch[3].trim();
+        ivrResponseText = `Authorization ${extractedAuthNumber} for procedure code ${approvedMatch[2]} is approved through ${extractedValidThrough}.`;
+      }
+
+      // Check for denied auth
+      const deniedMatch = twimlResponse.match(/Authorization (PA[\d-]+) for procedure code (\d+) was denied.*Reason: ([^.]+)/s);
+      if (deniedMatch) {
+        outcome = 'auth_found';
+        extractedAuthNumber = deniedMatch[1];
+        extractedStatus = 'denied';
+        ivrResponseText = `Authorization ${extractedAuthNumber} for procedure code ${deniedMatch[2]} was denied. Reason: ${deniedMatch[3].trim()}.`;
+      }
+
+      // Check for pending auth
+      const pendingMatch = twimlResponse.match(/Authorization (PA[\d-]+) for procedure code (\d+) is currently pending/);
+      if (pendingMatch) {
+        outcome = 'auth_found';
+        extractedAuthNumber = pendingMatch[1];
+        extractedStatus = 'pending';
+        ivrResponseText = `Authorization ${extractedAuthNumber} for procedure code ${pendingMatch[2]} is currently pending review.`;
+      }
+
+      transcript.push({ speaker: 'IVR', text: 'Please hold while I look up that information.' });
+      transcript.push({ speaker: 'IVR', text: ivrResponseText });
+
+      const durationSeconds = Math.round((Date.now() - startTime) / 1000) + 30; // Add simulated time
+
+      // Update call with results
+      db.run(`UPDATE calls SET
+              status = 'completed',
+              outcome = ?,
+              extracted_auth_number = ?,
+              extracted_status = ?,
+              extracted_valid_through = ?,
+              transcript = ?,
+              duration_seconds = ?,
+              ended_at = datetime('now')
+              WHERE id = ?`,
+             [outcome, extractedAuthNumber, extractedStatus, extractedValidThrough,
+              JSON.stringify(transcript), durationSeconds, call.id]);
+
+      saveDatabase();
+
+      const updatedCall = queryOne('SELECT * FROM calls WHERE id = ?', [call.id]);
+      res.json({
+        message: 'Call simulation completed',
+        call: updatedCall
+      });
+
+    } catch (ivrError) {
+      console.error('IVR simulation error:', ivrError);
+
+      // Update call as failed
+      db.run(`UPDATE calls SET
+              status = 'failed',
+              outcome = 'error',
+              transcript = ?,
+              ended_at = datetime('now')
+              WHERE id = ?`,
+             [JSON.stringify(transcript), call.id]);
+      saveDatabase();
+
+      res.status(500).json({ error: 'Call simulation failed', details: ivrError.message });
+    }
+
+  } catch (error) {
+    console.error('Error simulating call:', error);
+    res.status(500).json({ error: 'Failed to simulate call' });
+  }
+});
+
 // POST /api/seed - Reset and seed database
 app.post('/api/seed', (req, res) => {
   try {
