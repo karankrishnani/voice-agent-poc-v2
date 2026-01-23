@@ -1357,6 +1357,107 @@ npm run dev --prefix /Users/karankrishnani/projects/experiment/autonomous-coding
 
 ---
 
+## Session 13 - Bug Fixes and Agent Webhook Testing
+
+**Date:** 2026-01-23
+**Agent Type:** Coding
+
+### Goals for This Session
+- [x] Verify all services running correctly
+- [x] Run regression tests on passing features
+- [x] Fix any bugs discovered during verification
+- [ ] Mark additional Voice AI Agent features as passing (blocked by telephony)
+
+### Accomplished
+
+1. **Verified All Services Running**
+   - Backend (port 3001): ✅ Healthy
+   - Dashboard (port 3000): ✅ Working with API proxy
+   - Mock IVR (port 3002): ✅ Responding to TwiML requests
+
+2. **Fixed Critical Bugs in Agent Webhook**
+   - **Bug 1: Authorization result not detected**
+     - Problem: CPT code prompt check matched before authorization result check
+     - Cause: "procedure code" in auth result triggered CPT input instead of result extraction
+     - Fix: Moved authorization result check BEFORE CPT/procedure code check
+   - **Bug 2: DOB formatting incorrect**
+     - Problem: DOB was formatted as "311965" instead of "03151965"
+     - Cause: Slicing indices were wrong after removing dashes from YYYY-MM-DD
+     - Fix: Properly split date and reconstruct as MMDDYYYY
+
+3. **Tested Agent Webhook Flow**
+   - Tested complete call flow via POST /agent/voice endpoint
+   - Verified DTMF responses: `<Play digits="2"/>`, `<Play digits="1"/>`, etc.
+   - Verified member info provision: member ID, DOB (MMDDYYYY), CPT code
+   - Verified result extraction: auth number, status (approved/denied/pending), valid date
+   - Verified hangup after result extraction: `<Hangup/>`
+
+4. **Verified Dashboard Integration**
+   - Dashboard correctly shows all 26 test calls
+   - Call detail page displays extracted auth data correctly
+   - Transcript shows complete conversation with IVR/Agent labels
+
+### Features Status
+- No new features marked as passing
+- All 61 passing features verified working
+- **20 remaining features REQUIRE actual Twilio phone calls**
+
+### Code Changes
+- `backend/src/index.js`:
+  - Reordered condition checks (authorization result first)
+  - Fixed DOB date parsing (YYYY-MM-DD → MMDDYYYY)
+
+### Current Feature Stats
+- **Passing:** 61/81
+- **Percentage:** 75.3%
+
+### Remaining Features Analysis
+
+All 20 remaining features are Voice AI Agent category requiring real telephony:
+
+| Feature ID | Name | Why Blocked |
+|------------|------|-------------|
+| 16-18 | Call initiation/detection | Requires Twilio outbound calls |
+| 19 | DTMF tones | Requires real phone audio |
+| 20 | Speech recognition | Requires Deepgram STT |
+| 21 | TTS for member info | Requires ElevenLabs TTS |
+| 22-27 | State machine transitions | Requires real call flow |
+| 28-35 | IVR navigation | Requires real DTMF over phone |
+
+**What's Proven Working (via webhook tests):**
+- ✅ DTMF generation logic (`<Play digits="..."/>`)
+- ✅ Menu navigation logic
+- ✅ Member info provision (ID, DOB, CPT)
+- ✅ Authorization result extraction
+- ✅ Transcript logging
+- ✅ Database updates
+
+**What Requires Real Calls:**
+- ❌ Actual DTMF transmission over phone
+- ❌ Real speech recognition (Deepgram)
+- ❌ Real text-to-speech (ElevenLabs)
+- ❌ Pipecat voice pipeline
+
+### Service Startup Commands
+```bash
+# Backend
+node /Users/karankrishnani/projects/experiment/autonomous-coding/generations/voice-agent-poc-v2/backend/src/index.js &
+
+# Dashboard
+npm run dev --prefix /Users/karankrishnani/projects/experiment/autonomous-coding/generations/voice-agent-poc-v2/dashboard &
+
+# Mock IVR
+npm run dev --prefix /Users/karankrishnani/projects/experiment/autonomous-coding/generations/voice-agent-poc-v2/mock-ivr &
+```
+
+### Next Session Should
+1. Set up ngrok to expose webhook endpoints
+2. Test actual Twilio phone calls
+3. Verify DTMF transmission over real calls
+4. Complete Voice AI Agent features (16-35)
+
+---
+
 ## Session Notes Template (for future sessions)
 
 ```markdown
