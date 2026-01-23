@@ -647,6 +647,187 @@ app.get('/api/icd10-codes', (req, res) => {
 
 // ============ TWILIO WEBHOOKS ============
 
+// In-memory storage for active voice agent sessions
+const activeAgentSessions = new Map();
+
+// POST /agent/voice - Voice agent webhook for Twilio (handles IVR interaction)
+app.post('/agent/voice', (req, res) => {
+  try {
+    const { CallSid, CallStatus, SpeechResult, Digits } = req.body;
+
+    console.log(`Agent voice webhook: CallSid=${CallSid}, Status=${CallStatus}, Speech=${SpeechResult}, Digits=${Digits}`);
+
+    // Get or create session for this call
+    let session = activeAgentSessions.get(CallSid);
+    if (!session) {
+      session = {
+        state: 'NAVIGATING_MENU',
+        transcript: [],
+        callSid: CallSid,
+        memberInfo: null,
+        step: 0
+      };
+      activeAgentSessions.set(CallSid, session);
+    }
+
+    // Log what we heard
+    if (SpeechResult) {
+      session.transcript.push({ speaker: 'IVR', text: SpeechResult });
+    }
+
+    // Determine response based on current state and what we heard
+    let twiml = '';
+    const speechLower = (SpeechResult || '').toLowerCase();
+
+    // Get call info from database
+    const call = queryOne('SELECT c.*, m.* FROM calls c JOIN members m ON c.member_id = m.member_id WHERE c.call_sid = ?', [CallSid]);
+    if (call) {
+      session.memberInfo = call;
+    }
+
+    // State machine logic
+    if (speechLower.includes('prior authorization') && speechLower.includes('press 2')) {
+      // Main menu - press 2
+      session.transcript.push({ speaker: 'Agent', text: '*pressed 2*' });
+      twiml = createDtmfResponse('2');
+    }
+    else if (speechLower.includes('check the status') && speechLower.includes('press 1')) {
+      // Prior auth menu - press 1
+      session.transcript.push({ speaker: 'Agent', text: '*pressed 1*' });
+      session.state = 'PROVIDING_INFO';
+      twiml = createDtmfResponse('1');
+    }
+    else if (speechLower.includes('member id') && session.memberInfo) {
+      // Provide member ID
+      const memberId = session.memberInfo.member_id;
+      session.transcript.push({ speaker: 'Agent', text: memberId });
+      twiml = createDtmfResponse(memberId.replace(/[^0-9]/g, '') || memberId);
+    }
+    else if (speechLower.includes('date of birth') && session.memberInfo) {
+      // Provide DOB (MMDDYYYY)
+      const dob = session.memberInfo.date_of_birth.replace(/-/g, '');
+      const dobFormatted = dob.slice(5, 7) + dob.slice(8, 10) + dob.slice(0, 4);
+      session.transcript.push({ speaker: 'Agent', text: dobFormatted });
+      twiml = createDtmfResponse(dobFormatted);
+    }
+    else if ((speechLower.includes('cpt') || speechLower.includes('procedure code')) && session.memberInfo) {
+      // Provide CPT code
+      const cptCode = session.memberInfo.cpt_code_queried || '27447';
+      session.transcript.push({ speaker: 'Agent', text: cptCode });
+      session.state = 'WAITING_RESPONSE';
+      twiml = createDtmfResponse(cptCode);
+    }
+    else if (speechLower.includes('authorization') && (speechLower.includes('approved') || speechLower.includes('denied') || speechLower.includes('pending') || speechLower.includes('not found'))) {
+      // Got the result - extract and hang up
+      session.transcript.push({ speaker: 'IVR', text: SpeechResult });
+
+      // Extract authorization data
+      let outcome = 'auth_not_found';
+      let authNumber = null;
+      let status = null;
+      let validThrough = null;
+
+      const authMatch = SpeechResult.match(/Authorization (PA[\d-]+)/i);
+      if (authMatch) {
+        authNumber = authMatch[1];
+        outcome = 'auth_found';
+      }
+
+      if (speechLower.includes('approved')) {
+        status = 'approved';
+        const dateMatch = SpeechResult.match(/through\s+([^.]+)/i);
+        if (dateMatch) validThrough = dateMatch[1].trim();
+      } else if (speechLower.includes('denied')) {
+        status = 'denied';
+      } else if (speechLower.includes('pending')) {
+        status = 'pending';
+      }
+
+      // Update call in database
+      if (call) {
+        db.run(`UPDATE calls SET
+                status = 'completed',
+                outcome = ?,
+                extracted_auth_number = ?,
+                extracted_status = ?,
+                extracted_valid_through = ?,
+                transcript = ?,
+                ended_at = datetime('now')
+                WHERE call_sid = ?`,
+               [outcome, authNumber, status, validThrough, JSON.stringify(session.transcript), CallSid]);
+        saveDatabase();
+      }
+
+      // Clean up session
+      activeAgentSessions.delete(CallSid);
+
+      twiml = '<?xml version="1.0" encoding="UTF-8"?><Response><Hangup/></Response>';
+    }
+    else {
+      // Default: keep listening
+      twiml = createGatherResponse();
+    }
+
+    res.type('text/xml');
+    res.send(twiml);
+
+  } catch (error) {
+    console.error('Error in agent voice webhook:', error);
+    res.type('text/xml');
+    res.send('<?xml version="1.0" encoding="UTF-8"?><Response><Say>An error occurred</Say><Hangup/></Response>');
+  }
+});
+
+// POST /agent/status - Voice agent status callback
+app.post('/agent/status', (req, res) => {
+  try {
+    const { CallSid, CallStatus, CallDuration } = req.body;
+
+    console.log(`Agent status callback: CallSid=${CallSid}, Status=${CallStatus}, Duration=${CallDuration}`);
+
+    if (CallSid) {
+      let status = 'in_progress';
+      if (CallStatus === 'completed') status = 'completed';
+      else if (['failed', 'busy', 'no-answer', 'canceled'].includes(CallStatus)) status = 'failed';
+
+      db.run(`UPDATE calls SET
+              status = ?,
+              duration_seconds = COALESCE(?, duration_seconds),
+              ended_at = CASE WHEN ? IN ('completed', 'failed') THEN datetime('now') ELSE ended_at END
+              WHERE call_sid = ?`,
+             [status, CallDuration ? parseInt(CallDuration) : null, status, CallSid]);
+      saveDatabase();
+
+      // Clean up session
+      activeAgentSessions.delete(CallSid);
+    }
+
+    res.status(200).send('OK');
+  } catch (error) {
+    console.error('Error in agent status callback:', error);
+    res.status(500).send('Error');
+  }
+});
+
+// Helper functions for TwiML generation
+function createGatherResponse(message = '') {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Gather input="speech" action="/agent/voice" method="POST" timeout="10" speechTimeout="auto">
+    ${message ? `<Say voice="Polly.Matthew">${message}</Say>` : ''}
+  </Gather>
+</Response>`;
+}
+
+function createDtmfResponse(digits) {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Play digits="${digits}"/>
+  <Gather input="speech" action="/agent/voice" method="POST" timeout="10" speechTimeout="auto">
+  </Gather>
+</Response>`;
+}
+
 // POST /api/webhooks/twilio - Handle Twilio call status updates
 app.post('/api/webhooks/twilio', (req, res) => {
   try {

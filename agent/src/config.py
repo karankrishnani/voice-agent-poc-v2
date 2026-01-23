@@ -22,6 +22,9 @@ class AgentConfig:
     elevenlabs_api_key: str
     anthropic_api_key: str
 
+    # Webhook configuration (set after ngrok is running)
+    webhook_base_url: str = "http://localhost:3001"  # Override with ngrok URL
+
     # Optional settings
     elevenlabs_voice_id: str = "21m00Tcm4TlvDq8ikWAM"  # Default: Rachel
     deepgram_model: str = "nova-2"
