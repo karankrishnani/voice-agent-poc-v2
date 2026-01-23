@@ -1,0 +1,75 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Custom status badge animations */
+@keyframes pulse-ring {
+  0% {
+    transform: scale(0.95);
+    opacity: 0.5;
+  }
+  50% {
+    transform: scale(1);
+    opacity: 0.3;
+  }
+  100% {
+    transform: scale(0.95);
+    opacity: 0.5;
+  }
+}
+
+.status-badge-pulse {
+  animation: pulse-ring 2s infinite;
+}
+
+/* Transcript viewer styles */
+.transcript-ivr {
+  @apply bg-gray-100 dark:bg-slate-700 border-l-4 border-gray-400;
+}
+
+.transcript-agent {
+  @apply bg-blue-50 dark:bg-blue-900/30 border-l-4 border-blue-500;
+}
+
+.transcript-dtmf {
+  @apply inline-flex items-center px-2 py-0.5 text-xs font-mono bg-amber-100 dark:bg-amber-900/50 text-amber-800 dark:text-amber-200 rounded;
+}
+
+/* Card hover effects */
+.card-hover {
+  @apply transition-all duration-200 hover:shadow-lg hover:-translate-y-0.5;
+}
+
+/* Form styles */
+.form-input {
+  @apply block w-full rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 px-4 py-2.5 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 focus:outline-none transition-colors;
+}
+
+.form-select {
+  @apply block w-full rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 px-4 py-2.5 text-gray-900 dark:text-white focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 focus:outline-none transition-colors;
+}
+
+.form-label {
+  @apply block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5;
+}
+
+/* Button styles */
+.btn {
+  @apply inline-flex items-center justify-center px-4 py-2.5 rounded-lg font-medium transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
+}
+
+.btn-primary {
+  @apply btn bg-primary-600 text-white hover:bg-primary-700 focus:ring-primary-500;
+}
+
+.btn-secondary {
+  @apply btn bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-slate-700 dark:text-gray-200 dark:hover:bg-slate-600 focus:ring-gray-500;
+}
+
+.btn-danger {
+  @apply btn bg-danger-600 text-white hover:bg-danger-700 focus:ring-danger-500;
+}
+
+.btn-success {
+  @apply btn bg-success-600 text-white hover:bg-success-700 focus:ring-success-500;
+}

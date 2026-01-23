@@ -1,0 +1,474 @@
+<project_specification>
+  <project_name>Insurance Prior Auth Voice AI Agent POC</project_name>
+
+  <overview>
+    A proof-of-concept demonstrating an AI voice agent that can autonomously call 
+    insurance company IVR systems to check prior authorization status. The agent 
+    navigates phone trees using DTMF tones, speaks member information when prompted,
+    and extracts structured data from the responses. Includes a mock insurance IVR 
+    for controlled testing and a simple dashboard to view call results.
+    
+    Target audience: Healthcare technology companies looking to automate patient 
+    access workflows (prior auth, benefits verification, claim status).
+  </overview>
+
+  <feature_count>75</feature_count>
+
+  <technology_stack>
+    <voice_agent>
+      <platform>Pipecat (open-source voice AI framework)</platform>
+      <llm>Claude API for conversation orchestration</llm>
+      <stt>Deepgram for speech-to-text</stt>
+      <tts>ElevenLabs for text-to-speech</tts>
+      <telephony>Twilio for outbound calls</telephony>
+    </voice_agent>
+    <mock_ivr>
+      <platform>Twilio Studio or TwiML</platform>
+      <runtime>Node.js with Express</runtime>
+      <port>3002</port>
+    </mock_ivr>
+    <dashboard>
+      <framework>React with Vite</framework>
+      <styling>Tailwind CSS</styling>
+      <port>3000</port>
+    </dashboard>
+    <backend>
+      <runtime>Node.js with Express</runtime>
+      <database>SQLite with better-sqlite3</database>
+      <port>3001</port>
+    </backend>
+    <communication>
+      <api>RESTful endpoints</api>
+      <webhooks>Twilio webhooks for call events</webhooks>
+    </communication>
+  </technology_stack>
+
+  <prerequisites>
+    <environment_setup>
+      - Node.js 18+ installed
+      - npm or pnpm package manager
+      - Twilio account with phone number (~$1/month + usage)
+      - Deepgram API key (free tier available)
+      - ElevenLabs API key (free tier available)
+      - Claude API key
+      - ngrok for exposing local webhooks to Twilio
+    </environment_setup>
+    <api_keys_needed>
+      - TWILIO_ACCOUNT_SID
+      - TWILIO_AUTH_TOKEN
+      - TWILIO_PHONE_NUMBER
+      - DEEPGRAM_API_KEY
+      - ELEVENLABS_API_KEY
+      - ANTHROPIC_API_KEY
+    </api_keys_needed>
+  </prerequisites>
+
+  <core_features>
+    <mock_ivr_system>
+      - Insurance company IVR simulation with realistic phone tree
+      - DTMF input handling (press 1 for claims, 2 for authorization, etc.)
+      - Voice prompts for collecting member information
+      - Member ID validation against mock database
+      - Prior auth status lookup and response
+      - Hold music and transfer simulation
+      - Configurable response delays to simulate real systems
+      - Multiple scenario paths (approved, denied, pending, not found)
+    </mock_ivr_system>
+
+    <voice_ai_agent>
+      - Outbound call initiation to target phone number
+      - IVR navigation using DTMF tone generation
+      - Speech recognition for understanding IVR prompts
+      - Natural language responses for open-ended questions
+      - Member information recitation (ID, DOB, procedure codes)
+      - Hold detection and patience (wait for representative)
+      - Call state machine management
+      - Graceful handling of disconnects and transfers
+      - Conversation transcript logging
+      - Structured data extraction from call outcomes
+    </voice_ai_agent>
+
+    <mock_data_layer>
+      - Member database with test patients
+      - Prior authorization records with various statuses
+      - CPT/ICD-10 code reference data (subset from CMS)
+      - Insurance payer configurations
+      - Call history and outcomes
+    </mock_data_layer>
+
+    <dashboard>
+      - Call initiation interface (enter member ID, procedure code)
+      - Real-time call status display
+      - Call history with outcomes
+      - Conversation transcript viewer
+      - Extracted data display (auth status, reference numbers)
+      - Success/failure metrics
+      - Configuration panel for agent behavior
+    </dashboard>
+
+    <api_layer>
+      - POST /api/calls - Initiate a new call
+      - GET /api/calls - List call history
+      - GET /api/calls/:id - Get call details with transcript
+      - GET /api/calls/:id/status - Get real-time call status
+      - GET /api/members - List test members
+      - POST /api/members - Create test member
+      - GET /api/prior-auths - List prior auth records
+      - POST /api/prior-auths - Create prior auth record
+      - GET /api/stats - Get success/failure metrics
+      - POST /api/webhooks/twilio - Handle Twilio call events
+    </api_layer>
+  </core_features>
+
+  <mock_ivr_flow>
+    <welcome>
+      "Thank you for calling ABC Insurance. Para español, oprima el dos.
+       For claims, press 1. For prior authorization, press 2. 
+       For member services, press 3. To repeat this menu, press 9."
+    </welcome>
+    
+    <prior_auth_menu>
+      "You've reached prior authorization. 
+       To check the status of an existing authorization, press 1.
+       To submit a new authorization request, press 2.
+       To speak with a representative, press 0."
+    </prior_auth_menu>
+    
+    <status_check_flow>
+      1. "Please enter or say your 9-digit member ID."
+      2. "Please enter or say the patient's date of birth as 8 digits."
+      3. "Please enter the CPT procedure code you're inquiring about."
+      4. [System looks up authorization]
+      5. Response varies:
+         - Found/Approved: "Authorization ABC123 for procedure [code] is approved through [date]."
+         - Found/Denied: "Authorization ABC123 for procedure [code] was denied. Reason: [reason]."
+         - Found/Pending: "Authorization ABC123 for procedure [code] is pending review."
+         - Not Found: "No authorization found for this member and procedure code."
+    </status_check_flow>
+  </mock_ivr_flow>
+
+  <agent_state_machine>
+    <states>
+      - IDLE: Waiting to initiate call
+      - DIALING: Call in progress, waiting for answer
+      - NAVIGATING_MENU: Listening for menu options, sending DTMF
+      - PROVIDING_INFO: Speaking member info in response to prompts
+      - WAITING_RESPONSE: Waiting for IVR to process and respond
+      - ON_HOLD: Detected hold music/message, waiting
+      - EXTRACTING_RESULT: Parsing final response for structured data
+      - CALL_COMPLETE: Call ended, data extracted
+      - CALL_FAILED: Call failed (busy, no answer, error)
+    </states>
+    
+    <transitions>
+      - IDLE → DIALING: User initiates call
+      - DIALING → NAVIGATING_MENU: Call answered, hear menu
+      - NAVIGATING_MENU → PROVIDING_INFO: Prompted for information
+      - PROVIDING_INFO → WAITING_RESPONSE: Information provided
+      - WAITING_RESPONSE → NAVIGATING_MENU: More menu options
+      - WAITING_RESPONSE → ON_HOLD: Hold detected
+      - WAITING_RESPONSE → EXTRACTING_RESULT: Final response heard
+      - ON_HOLD → NAVIGATING_MENU: Hold ended
+      - EXTRACTING_RESULT → CALL_COMPLETE: Data extracted
+      - Any → CALL_FAILED: Error or unexpected disconnect
+    </transitions>
+  </agent_state_machine>
+
+  <database_schema>
+    <tables>
+      <members>
+        - id (PRIMARY KEY)
+        - member_id (UNIQUE, NOT NULL) -- e.g., "ABC123456"
+        - first_name (NOT NULL)
+        - last_name (NOT NULL)
+        - date_of_birth (NOT NULL) -- YYYY-MM-DD
+        - payer_name -- e.g., "Blue Cross Blue Shield"
+        - created_at, updated_at
+      </members>
+
+      <prior_authorizations>
+        - id (PRIMARY KEY)
+        - member_id (FOREIGN KEY -> members.member_id)
+        - auth_number (UNIQUE) -- e.g., "PA2024-78432"
+        - cpt_code (NOT NULL) -- e.g., "27447"
+        - cpt_description
+        - icd10_code -- e.g., "M17.11"
+        - icd10_description
+        - status (enum: approved, denied, pending, expired)
+        - denial_reason (nullable)
+        - valid_from (date)
+        - valid_through (date)
+        - created_at, updated_at
+      </prior_authorizations>
+
+      <calls>
+        - id (PRIMARY KEY)
+        - member_id (FOREIGN KEY -> members.member_id)
+        - cpt_code_queried
+        - call_sid (Twilio call SID)
+        - status (enum: initiated, in_progress, completed, failed)
+        - outcome (enum: auth_found, auth_not_found, error, timeout)
+        - extracted_auth_number (nullable)
+        - extracted_status (nullable)
+        - extracted_valid_through (nullable)
+        - transcript (TEXT) -- JSON array of conversation turns
+        - duration_seconds
+        - started_at
+        - ended_at
+        - created_at
+      </calls>
+
+      <call_events>
+        - id (PRIMARY KEY)
+        - call_id (FOREIGN KEY -> calls.id)
+        - event_type (enum: dtmf_sent, speech_detected, prompt_heard, state_change)
+        - event_data (JSON)
+        - timestamp
+      </call_events>
+
+      <cpt_codes>
+        - code (PRIMARY KEY) -- e.g., "27447"
+        - description -- e.g., "Arthroplasty, knee, condyle and plateau"
+        - category
+      </cpt_codes>
+
+      <icd10_codes>
+        - code (PRIMARY KEY) -- e.g., "M17.11"
+        - description -- e.g., "Primary osteoarthritis, right knee"
+        - category
+      </icd10_codes>
+    </tables>
+  </database_schema>
+
+  <ui_layout>
+    <main_structure>
+      - Header with app title and status indicator
+      - Left sidebar for navigation
+      - Main content area
+    </main_structure>
+
+    <pages>
+      <dashboard>
+        - Quick stats (total calls, success rate, avg duration)
+        - Recent calls list with status badges
+        - Quick action: Start new call
+      </dashboard>
+      
+      <new_call>
+        - Member selection dropdown (from test members)
+        - Or manual entry: Member ID, DOB
+        - Procedure code input with autocomplete
+        - Target phone number (defaults to mock IVR)
+        - "Start Call" button
+        - Real-time call status display during call
+      </new_call>
+      
+      <call_detail>
+        - Call metadata (duration, timestamps, outcome)
+        - Extracted data card (auth number, status, dates)
+        - Full conversation transcript with timestamps
+        - State machine visualization (optional)
+        - Audio playback (if recorded)
+      </call_detail>
+      
+      <test_data>
+        - Members list with CRUD
+        - Prior authorizations list with CRUD
+        - Seed data button to populate test data
+      </test_data>
+      
+      <settings>
+        - Agent behavior configuration
+        - IVR target phone number
+        - API key status indicators
+        - Webhook URL display
+      </settings>
+    </pages>
+  </ui_layout>
+
+  <design_system>
+    <color_palette>
+      - Primary: #2563EB (blue - trust, healthcare)
+      - Secondary: #059669 (green - success, approved)
+      - Accent: #D97706 (amber - pending, attention)
+      - Danger: #DC2626 (red - denied, error)
+      - Background: #F8FAFC (light), #0F172A (dark)
+      - Surface: #FFFFFF (light), #1E293B (dark)
+      - Text: #1E293B (light), #F1F5F9 (dark)
+    </color_palette>
+
+    <status_badges>
+      - Approved: green background, white text
+      - Denied: red background, white text
+      - Pending: amber background, dark text
+      - In Progress: blue background, white text, animated pulse
+      - Failed: gray background, red text
+    </status_badges>
+
+    <components>
+      <call_status_card>
+        - Large status indicator with animation
+        - Current state label
+        - Elapsed time counter
+        - Recent transcript lines (last 3)
+        - Cancel call button
+      </call_status_card>
+
+      <transcript_viewer>
+        - Alternating colors for IVR vs Agent
+        - Timestamps on each turn
+        - DTMF tones shown as badges
+        - Auto-scroll to latest
+      </transcript_viewer>
+    </components>
+  </design_system>
+
+  <key_interactions>
+    <initiate_call>
+      1. User navigates to "New Call" page
+      2. Selects or enters member information
+      3. Enters CPT code for procedure
+      4. Clicks "Start Call"
+      5. UI shows real-time call status
+      6. Transcript updates live as call progresses
+      7. Call completes, extracted data displayed
+      8. User can view full details or start another call
+    </initiate_call>
+
+    <view_call_history>
+      1. User navigates to Dashboard
+      2. Sees list of recent calls with outcomes
+      3. Clicks on a call to view details
+      4. Sees full transcript and extracted data
+      5. Can export or share results
+    </view_call_history>
+
+    <manage_test_data>
+      1. User navigates to Test Data page
+      2. Can add/edit/delete test members
+      3. Can add/edit/delete prior auth records
+      4. Can seed sample data with one click
+      5. Changes immediately available in mock IVR
+    </manage_test_data>
+  </key_interactions>
+
+  <implementation_steps>
+    <step number="1">
+      <title>Project Setup and Mock Data Layer</title>
+      <tasks>
+        - Initialize monorepo structure (dashboard, backend, mock-ivr, agent)
+        - Set up Express backend with SQLite
+        - Create database schema and migrations
+        - Implement mock data API endpoints
+        - Seed CPT/ICD-10 reference data (subset)
+        - Create sample members and prior auths
+      </tasks>
+    </step>
+
+    <step number="2">
+      <title>Mock Insurance IVR</title>
+      <tasks>
+        - Set up Twilio account and phone number
+        - Create TwiML application for incoming calls
+        - Implement IVR phone tree with menus
+        - Add DTMF input handlers
+        - Implement voice prompts for data collection
+        - Connect to mock database for auth lookups
+        - Test manually by calling the number
+      </tasks>
+    </step>
+
+    <step number="3">
+      <title>Voice AI Agent Core</title>
+      <tasks>
+        - Set up Pipecat framework
+        - Configure Deepgram STT integration
+        - Configure ElevenLabs TTS integration
+        - Implement Claude-based conversation orchestration
+        - Build state machine for call navigation
+        - Add DTMF tone generation capability
+        - Implement outbound call via Twilio
+      </tasks>
+    </step>
+
+    <step number="4">
+      <title>Agent Intelligence</title>
+      <tasks>
+        - Create prompts for IVR navigation
+        - Implement menu detection and response selection
+        - Add member info recitation capability
+        - Build hold detection logic
+        - Implement result extraction from final responses
+        - Add error handling and retry logic
+        - Test against mock IVR
+      </tasks>
+    </step>
+
+    <step number="5">
+      <title>Dashboard Frontend</title>
+      <tasks>
+        - Set up React with Vite and Tailwind
+        - Build navigation and layout
+        - Create Dashboard page with stats
+        - Build New Call page with real-time status
+        - Create Call Detail page with transcript
+        - Build Test Data management pages
+        - Add Settings page
+      </tasks>
+    </step>
+
+    <step number="6">
+      <title>Integration and Polish</title>
+      <tasks>
+        - Connect dashboard to backend APIs
+        - Implement WebSocket for real-time call updates
+        - Add call event logging
+        - Build transcript viewer component
+        - Test full end-to-end flow
+        - Fix edge cases and improve reliability
+        - Add loading states and error handling
+      </tasks>
+    </step>
+  </implementation_steps>
+
+  <success_criteria>
+    <demo_scenario>
+      The POC is successful when it can demonstrate:
+      1. User initiates call from dashboard for member ABC123456, CPT 27447
+      2. Agent dials mock IVR phone number
+      3. Agent navigates: Press 2 (prior auth) → Press 1 (status check)
+      4. Agent speaks member ID when prompted
+      5. Agent speaks DOB when prompted
+      6. Agent speaks CPT code when prompted
+      7. Agent hears and extracts: "Authorization PA2024-78432 is approved through 2024-06-30"
+      8. Dashboard shows extracted data: auth number, status, valid date
+      9. Full transcript viewable in call details
+    </demo_scenario>
+
+    <metrics>
+      - 90%+ success rate on mock IVR calls
+      - Average call duration under 60 seconds
+      - Accurate data extraction on successful calls
+      - Graceful failure handling (no crashes)
+    </metrics>
+
+    <technical_quality>
+      - Clean separation between components
+      - Reusable agent logic for different IVR patterns
+      - Well-documented API endpoints
+      - Transcript logging for debugging
+      - Configuration-driven IVR navigation
+    </technical_quality>
+  </success_criteria>
+
+  <future_enhancements>
+    <!-- Not in scope for POC, but good to mention for demo -->
+    - Support for real insurance company IVRs
+    - Multiple IVR navigation profiles
+    - Batch call processing
+    - Integration with EHR systems
+    - Prior auth submission (not just status check)
+    - Appeals filing workflow
+    - Analytics and reporting
+  </future_enhancements>
+</project_specification>
