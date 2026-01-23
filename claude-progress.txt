@@ -247,6 +247,98 @@ These cannot be tested without actual API credentials.
 
 ---
 
+## Session 3 - Bug Fixes and Verification
+
+**Date:** 2026-01-23
+**Agent Type:** Coding
+
+### Goals for This Session
+- [x] Fix dashboard API issues (CORS/proxy)
+- [x] Verify all services running correctly
+- [x] Run regression tests on passing features
+- [ ] Implement Voice AI Agent features (blocked by credentials)
+
+### Accomplished
+
+1. **Fixed Dashboard API Integration**
+   - Replaced hardcoded `http://localhost:3001` URLs with relative `/api` paths
+   - Dashboard now correctly uses Vite proxy for API calls
+   - Fixed files: Dashboard.jsx, NewCall.jsx, TestData.jsx, CallDetail.jsx
+
+2. **Updated TestData Page**
+   - Now fetches members and prior-auths from real API
+   - Seed data button actually calls `/api/seed` endpoint
+   - Removed hardcoded mock data
+
+3. **Updated CallDetail Page**
+   - Now fetches actual call details from API
+   - Parses transcript JSON correctly
+
+4. **Verified All Services**
+   - Backend (port 3001): ✅ Working
+   - Dashboard (port 3000): ✅ Working with API proxy
+   - Mock IVR (port 3002): ✅ Working
+
+5. **Regression Testing**
+   - Verified Mock IVR member ID collection
+   - Verified Mock IVR denied auth lookup
+   - Verified API call status endpoint
+   - Verified dashboard stats display
+   - Verified New Call page member dropdown
+   - Verified Test Data page tables
+   - Verified CPT code quick-select buttons
+
+### Features Status
+- No new features marked passing (bug fixes only)
+- All 48 passing features verified working
+
+### Issues Encountered
+- Backend was not running initially - had to restart
+- Wrong process running on port 3001 - had to kill and restart correct backend
+- Dashboard was making direct API calls instead of using Vite proxy (fixed)
+
+### Technical Decisions
+- Use relative `/api` URLs in frontend to leverage Vite's proxy configuration
+- This avoids CORS issues and works in both development and production
+
+### Current Feature Stats
+- **Passing:** 48/81
+- **Percentage:** 59.3%
+
+### Remaining Features
+All 33 remaining features are Voice AI Agent features requiring:
+- Twilio account with phone number
+- Deepgram API key (STT)
+- ElevenLabs API key (TTS)
+- Anthropic API key (Claude)
+- ngrok for webhook testing
+- Pipecat framework setup
+
+### Next Session Should
+1. **Set up external API credentials** (see .env.example):
+   - TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_PHONE_NUMBER
+   - DEEPGRAM_API_KEY
+   - ELEVENLABS_API_KEY
+   - ANTHROPIC_API_KEY
+2. Configure ngrok for Twilio webhooks
+3. Implement Pipecat voice agent in `agent/` directory
+4. Test end-to-end call flow against mock IVR
+5. Complete Voice AI Agent features (16-39, 73-81)
+
+### Service Startup Commands
+```bash
+# Backend
+node --watch backend/src/index.js
+
+# Dashboard
+npm run dev --prefix dashboard
+
+# Mock IVR
+npm run dev --prefix mock-ivr
+```
+
+---
+
 ## Session Notes Template (for future sessions)
 
 ```markdown
