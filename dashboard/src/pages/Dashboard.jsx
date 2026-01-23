@@ -49,12 +49,10 @@ export default function Dashboard() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const API_URL = 'http://localhost:3001';
-
-        // Fetch stats and recent calls in parallel
+        // Use relative URLs to leverage Vite's proxy
         const [statsRes, callsRes] = await Promise.all([
-          fetch(`${API_URL}/api/stats`),
-          fetch(`${API_URL}/api/calls`)
+          fetch('/api/stats'),
+          fetch('/api/calls')
         ]);
 
         if (statsRes.ok) {

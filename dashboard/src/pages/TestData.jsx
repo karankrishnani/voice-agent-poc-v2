@@ -7,25 +7,48 @@ export default function TestData() {
   const [activeTab, setActiveTab] = useState('members');
 
   useEffect(() => {
-    // TODO: Fetch from API
-    setMembers([
-      { id: 1, member_id: 'ABC123456', first_name: 'John', last_name: 'Smith', date_of_birth: '1965-03-15', payer_name: 'Blue Cross Blue Shield' },
-      { id: 2, member_id: 'DEF789012', first_name: 'Sarah', last_name: 'Johnson', date_of_birth: '1978-07-22', payer_name: 'Aetna' },
-      { id: 3, member_id: 'GHI345678', first_name: 'Michael', last_name: 'Williams', date_of_birth: '1982-11-08', payer_name: 'United Healthcare' },
-    ]);
-    setPriorAuths([
-      { id: 1, member_id: 'ABC123456', auth_number: 'PA2024-78432', cpt_code: '27447', status: 'approved', valid_through: '2024-06-30' },
-      { id: 2, member_id: 'DEF789012', auth_number: 'PA2024-65234', cpt_code: '29881', status: 'denied', denial_reason: 'Conservative treatment not attempted' },
-      { id: 3, member_id: 'GHI345678', auth_number: 'PA2024-92145', cpt_code: '63030', status: 'pending', valid_through: null },
-    ]);
-    setLoading(false);
+    const fetchData = async () => {
+      try {
+        const [membersRes, authsRes] = await Promise.all([
+          fetch('/api/members'),
+          fetch('/api/prior-auths')
+        ]);
+        if (membersRes.ok) {
+          setMembers(await membersRes.json());
+        }
+        if (authsRes.ok) {
+          setPriorAuths(await authsRes.json());
+        }
+      } catch (error) {
+        console.error('Failed to fetch test data:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchData();
   }, []);
 
   const handleSeedData = async () => {
     if (!window.confirm('This will reset all test data to default values. Continue?')) return;
 
-    // TODO: Call seed API
-    alert('Seed data functionality - TODO: Implement API call');
+    try {
+      const response = await fetch('/api/seed', { method: 'POST' });
+      if (response.ok) {
+        // Refresh data after seeding
+        const [membersRes, authsRes] = await Promise.all([
+          fetch('/api/members'),
+          fetch('/api/prior-auths')
+        ]);
+        if (membersRes.ok) setMembers(await membersRes.json());
+        if (authsRes.ok) setPriorAuths(await authsRes.json());
+        alert('Test data has been reset successfully!');
+      } else {
+        throw new Error('Failed to seed data');
+      }
+    } catch (error) {
+      console.error('Failed to seed data:', error);
+      alert('Failed to seed data: ' + error.message);
+    }
   };
 
   const StatusBadge = ({ status }) => {

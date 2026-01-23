@@ -25,35 +25,31 @@ export default function CallDetail() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // TODO: Fetch call details from API
-    // For now, using placeholder data
-    setCall({
-      id: id,
-      member_id: 'ABC123456',
-      cpt_code_queried: '27447',
-      status: 'completed',
-      outcome: 'auth_found',
-      extracted_auth_number: 'PA2024-78432',
-      extracted_status: 'approved',
-      extracted_valid_through: '2024-06-30',
-      duration_seconds: 45,
-      started_at: '2024-03-15T10:30:00Z',
-      ended_at: '2024-03-15T10:30:45Z',
-      transcript: [
-        { speaker: 'ivr', text: 'Thank you for calling ABC Insurance. For claims, press 1. For prior authorization, press 2.', timestamp: '00:00' },
-        { speaker: 'agent', text: '[DTMF: 2]', type: 'dtmf', timestamp: '00:05' },
-        { speaker: 'ivr', text: 'You\'ve reached prior authorization. To check the status of an existing authorization, press 1.', timestamp: '00:08' },
-        { speaker: 'agent', text: '[DTMF: 1]', type: 'dtmf', timestamp: '00:15' },
-        { speaker: 'ivr', text: 'Please enter or say your 9-digit member ID.', timestamp: '00:18' },
-        { speaker: 'agent', text: 'A B C 1 2 3 4 5 6', timestamp: '00:22' },
-        { speaker: 'ivr', text: 'Please enter the patient\'s date of birth.', timestamp: '00:28' },
-        { speaker: 'agent', text: '03 15 1965', timestamp: '00:32' },
-        { speaker: 'ivr', text: 'Please enter the CPT procedure code.', timestamp: '00:36' },
-        { speaker: 'agent', text: '2 7 4 4 7', timestamp: '00:40' },
-        { speaker: 'ivr', text: 'Authorization PA2024-78432 for procedure code 27447 is approved through June 30, 2024.', timestamp: '00:45' },
-      ],
-    });
-    setLoading(false);
+    const fetchCallDetails = async () => {
+      try {
+        const response = await fetch(`/api/calls/${id}`);
+        if (response.ok) {
+          const data = await response.json();
+          // Parse transcript if it's a JSON string
+          if (data.transcript && typeof data.transcript === 'string') {
+            try {
+              data.transcript = JSON.parse(data.transcript);
+            } catch (e) {
+              data.transcript = [];
+            }
+          }
+          setCall(data);
+        } else {
+          setCall(null);
+        }
+      } catch (error) {
+        console.error('Failed to fetch call details:', error);
+        setCall(null);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchCallDetails();
   }, [id]);
 
   if (loading) {

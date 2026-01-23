@@ -16,7 +16,7 @@ export default function NewCall() {
   useEffect(() => {
     const fetchMembers = async () => {
       try {
-        const response = await fetch('http://localhost:3001/api/members');
+        const response = await fetch('/api/members');
         if (response.ok) {
           const data = await response.json();
           setMembers(data);
@@ -37,7 +37,7 @@ export default function NewCall() {
 
     try {
       // Make actual API call to create the call
-      const response = await fetch('http://localhost:3001/api/calls', {
+      const response = await fetch('/api/calls', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
