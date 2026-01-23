@@ -339,6 +339,88 @@ npm run dev --prefix mock-ivr
 
 ---
 
+## Session 4 - Bug Fixes and Verification
+
+**Date:** 2026-01-23
+**Agent Type:** Coding
+
+### Goals for This Session
+- [x] Verify all services running correctly
+- [x] Run regression tests on passing features
+- [x] Fix any bugs discovered during verification
+- [ ] Implement Voice AI Agent features (blocked by credentials)
+
+### Accomplished
+
+1. **Fixed Transcript Speaker Label Bug**
+   - CallDetail.jsx was comparing `turn.speaker === 'ivr'` (lowercase)
+   - Transcript data contains `"speaker":"IVR"` (uppercase)
+   - Fixed using case-insensitive comparison: `turn.speaker?.toLowerCase() === 'ivr'`
+   - Now IVR messages show "🤖 IVR" and Agent messages show "🎙️ Agent"
+
+2. **Identified and Fixed Backend Process Conflict**
+   - Old `voice-agent-poc` project backend was running on port 3001
+   - Was interfering with `voice-agent-poc-v2` backend
+   - API was returning different format: `{"calls":[]}` vs `[{...}]`
+   - Killed conflicting processes and started correct backend
+
+3. **Verified All Features Working**
+   - Dashboard: Stats, recent calls, navigation all working
+   - New Call: Member dropdown, CPT code selection working
+   - Test Data: Members and Prior Auths tables working
+   - Call Detail: Transcript viewer now shows correct speaker labels
+   - Settings: API key status, IVR config working
+   - Mock IVR: All TwiML endpoints working
+   - Backend API: All CRUD operations working
+
+### Features Completed
+- No new features marked passing (bug fixes only)
+- All 48 passing features verified working
+
+### Issues Encountered
+- Backend process from different project (`voice-agent-poc`) taking port 3001
+- Case sensitivity bug in transcript speaker label comparison
+- Services need to be started with full paths from correct project directory
+
+### Technical Decisions
+1. Use `toLowerCase()` for case-insensitive speaker comparison
+2. Start backend with full path: `node /full/path/to/backend/src/index.js`
+3. Verify working directory with `lsof -p PID | grep cwd`
+
+### Current Feature Stats
+- **Passing:** 48/81
+- **Percentage:** 59.3%
+
+### Remaining Features
+All 33 remaining features are Voice AI Agent features requiring:
+- Twilio account with phone number
+- Deepgram API key (STT)
+- ElevenLabs API key (TTS)
+- Anthropic API key (Claude)
+- ngrok for webhook testing
+- Pipecat framework setup
+
+### Service Startup Commands
+```bash
+# Backend (must use full path from correct project)
+node /Users/karankrishnani/projects/experiment/autonomous-coding/generations/voice-agent-poc-v2/backend/src/index.js &
+
+# Dashboard
+npm run dev --prefix /Users/karankrishnani/projects/experiment/autonomous-coding/generations/voice-agent-poc-v2/dashboard &
+
+# Mock IVR
+npm run dev --prefix /Users/karankrishnani/projects/experiment/autonomous-coding/generations/voice-agent-poc-v2/mock-ivr &
+```
+
+### Next Session Should
+1. **Set up external API credentials** (see .env.example)
+2. Configure ngrok for Twilio webhooks
+3. Implement Pipecat voice agent in `agent/` directory
+4. Test end-to-end call flow against mock IVR
+5. Complete Voice AI Agent features (16-39, 73-81)
+
+---
+
 ## Session Notes Template (for future sessions)
 
 ```markdown
