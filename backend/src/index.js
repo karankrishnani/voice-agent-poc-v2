@@ -685,39 +685,8 @@ app.post('/agent/voice', (req, res) => {
       session.memberInfo = call;
     }
 
-    // State machine logic
-    if (speechLower.includes('prior authorization') && speechLower.includes('press 2')) {
-      // Main menu - press 2
-      session.transcript.push({ speaker: 'Agent', text: '*pressed 2*' });
-      twiml = createDtmfResponse('2');
-    }
-    else if (speechLower.includes('check the status') && speechLower.includes('press 1')) {
-      // Prior auth menu - press 1
-      session.transcript.push({ speaker: 'Agent', text: '*pressed 1*' });
-      session.state = 'PROVIDING_INFO';
-      twiml = createDtmfResponse('1');
-    }
-    else if (speechLower.includes('member id') && session.memberInfo) {
-      // Provide member ID
-      const memberId = session.memberInfo.member_id;
-      session.transcript.push({ speaker: 'Agent', text: memberId });
-      twiml = createDtmfResponse(memberId.replace(/[^0-9]/g, '') || memberId);
-    }
-    else if (speechLower.includes('date of birth') && session.memberInfo) {
-      // Provide DOB (MMDDYYYY)
-      const dob = session.memberInfo.date_of_birth.replace(/-/g, '');
-      const dobFormatted = dob.slice(5, 7) + dob.slice(8, 10) + dob.slice(0, 4);
-      session.transcript.push({ speaker: 'Agent', text: dobFormatted });
-      twiml = createDtmfResponse(dobFormatted);
-    }
-    else if ((speechLower.includes('cpt') || speechLower.includes('procedure code')) && session.memberInfo) {
-      // Provide CPT code
-      const cptCode = session.memberInfo.cpt_code_queried || '27447';
-      session.transcript.push({ speaker: 'Agent', text: cptCode });
-      session.state = 'WAITING_RESPONSE';
-      twiml = createDtmfResponse(cptCode);
-    }
-    else if (speechLower.includes('authorization') && (speechLower.includes('approved') || speechLower.includes('denied') || speechLower.includes('pending') || speechLower.includes('not found'))) {
+    // State machine logic - check authorization results FIRST (before other pattern matches)
+    if (speechLower.includes('authorization') && (speechLower.includes('approved') || speechLower.includes('denied') || speechLower.includes('pending') || speechLower.includes('not found'))) {
       // Got the result - extract and hang up
       session.transcript.push({ speaker: 'IVR', text: SpeechResult });
 
@@ -762,6 +731,38 @@ app.post('/agent/voice', (req, res) => {
       activeAgentSessions.delete(CallSid);
 
       twiml = '<?xml version="1.0" encoding="UTF-8"?><Response><Hangup/></Response>';
+    }
+    else if (speechLower.includes('prior authorization') && speechLower.includes('press 2')) {
+      // Main menu - press 2
+      session.transcript.push({ speaker: 'Agent', text: '*pressed 2*' });
+      twiml = createDtmfResponse('2');
+    }
+    else if (speechLower.includes('check the status') && speechLower.includes('press 1')) {
+      // Prior auth menu - press 1
+      session.transcript.push({ speaker: 'Agent', text: '*pressed 1*' });
+      session.state = 'PROVIDING_INFO';
+      twiml = createDtmfResponse('1');
+    }
+    else if (speechLower.includes('member id') && session.memberInfo) {
+      // Provide member ID
+      const memberId = session.memberInfo.member_id;
+      session.transcript.push({ speaker: 'Agent', text: memberId });
+      twiml = createDtmfResponse(memberId.replace(/[^0-9]/g, '') || memberId);
+    }
+    else if (speechLower.includes('date of birth') && session.memberInfo) {
+      // Provide DOB (MMDDYYYY) - date is stored as YYYY-MM-DD
+      const dob = session.memberInfo.date_of_birth; // e.g., "1965-03-15"
+      const [year, month, day] = dob.split('-');
+      const dobFormatted = month + day + year; // MMDDYYYY
+      session.transcript.push({ speaker: 'Agent', text: dobFormatted });
+      twiml = createDtmfResponse(dobFormatted);
+    }
+    else if ((speechLower.includes('cpt') || speechLower.includes('procedure code')) && session.memberInfo) {
+      // Provide CPT code
+      const cptCode = session.memberInfo.cpt_code_queried || '27447';
+      session.transcript.push({ speaker: 'Agent', text: cptCode });
+      session.state = 'WAITING_RESPONSE';
+      twiml = createDtmfResponse(cptCode);
     }
     else {
       // Default: keep listening
