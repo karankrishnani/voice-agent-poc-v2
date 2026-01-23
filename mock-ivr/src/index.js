@@ -51,7 +51,9 @@ app.post('/menu', (req, res) => {
       `));
       break;
     case '2':
-      res.redirect(307, '/prior-auth-menu');
+      res.send(twimlResponse(`
+        <Redirect>/prior-auth-menu</Redirect>
+      `));
       break;
     case '3':
       res.send(twimlResponse(`
@@ -60,7 +62,9 @@ app.post('/menu', (req, res) => {
       `));
       break;
     case '9':
-      res.redirect(307, '/voice');
+      res.send(twimlResponse(`
+        <Redirect>/voice</Redirect>
+      `));
       break;
     default:
       res.send(twimlResponse(`
@@ -93,7 +97,9 @@ app.post('/prior-auth-route', (req, res) => {
 
   switch (digit) {
     case '1':
-      res.redirect(307, '/collect-member-id');
+      res.send(twimlResponse(`
+        <Redirect>/collect-member-id</Redirect>
+      `));
       break;
     case '2':
       res.send(twimlResponse(`
@@ -131,28 +137,31 @@ app.post('/collect-member-id', (req, res) => {
 
 // Collect Date of Birth
 app.post('/collect-dob', (req, res) => {
-  const memberId = req.body.Digits || req.body.SpeechResult;
+  const memberId = req.body.Digits || req.body.SpeechResult || '';
+  const encodedMemberId = encodeURIComponent(memberId);
   res.type('text/xml');
   res.send(twimlResponse(`
-  <Gather input="dtmf speech" numDigits="8" action="/collect-cpt?memberId=${memberId}" method="POST" timeout="10">
+  <Gather input="dtmf speech" numDigits="8" action="/collect-cpt?memberId=${encodedMemberId}" method="POST" timeout="10">
     <Say voice="Polly.Joanna">Please enter or say the patient's date of birth as 8 digits. Month, day, and 4 digit year.</Say>
   </Gather>
   <Say voice="Polly.Joanna">We didn't receive any input.</Say>
-  <Redirect>/collect-dob?memberId=${memberId}</Redirect>
+  <Redirect>/collect-dob?memberId=${encodedMemberId}</Redirect>
 `));
 });
 
 // Collect CPT Code
 app.post('/collect-cpt', (req, res) => {
-  const memberId = req.query.memberId;
-  const dob = req.body.Digits || req.body.SpeechResult;
+  const memberId = req.query.memberId || '';
+  const dob = req.body.Digits || req.body.SpeechResult || '';
+  const encodedMemberId = encodeURIComponent(memberId);
+  const encodedDob = encodeURIComponent(dob);
   res.type('text/xml');
   res.send(twimlResponse(`
-  <Gather input="dtmf speech" numDigits="5" action="/lookup-auth?memberId=${memberId}&amp;dob=${dob}" method="POST" timeout="10">
+  <Gather input="dtmf speech" numDigits="5" action="/lookup-auth?memberId=${encodedMemberId}&amp;dob=${encodedDob}" method="POST" timeout="10">
     <Say voice="Polly.Joanna">Please enter the CPT procedure code you're inquiring about.</Say>
   </Gather>
   <Say voice="Polly.Joanna">We didn't receive any input.</Say>
-  <Redirect>/collect-cpt?memberId=${memberId}</Redirect>
+  <Redirect>/collect-cpt?memberId=${encodedMemberId}</Redirect>
 `));
 });
 

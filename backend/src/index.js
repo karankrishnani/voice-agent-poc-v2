@@ -6,12 +6,25 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { v4 as uuidv4 } from 'uuid';
+import twilio from 'twilio';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Load environment variables
-dotenv.config();
+// Load environment variables - check parent directory (project root) first, then local
+dotenv.config({ path: path.join(__dirname, '..', '..', '.env') });
+dotenv.config({ path: path.join(__dirname, '..', '.env') });
+
+console.log('Twilio Config Check:');
+console.log('  TWILIO_ACCOUNT_SID:', process.env.TWILIO_ACCOUNT_SID ? 'SET' : 'NOT SET');
+console.log('  IVR_PHONE_NUMBER:', process.env.IVR_PHONE_NUMBER || 'NOT SET');
+console.log('  AGENT_WEBHOOK_URL:', process.env.AGENT_WEBHOOK_URL || 'NOT SET');
+
+// Initialize Twilio client
+const twilioClient = twilio(
+  process.env.TWILIO_ACCOUNT_SID,
+  process.env.TWILIO_AUTH_TOKEN
+);
 
 const app = express();
 const PORT = process.env.BACKEND_PORT || 3001;
@@ -477,9 +490,9 @@ app.get('/api/calls/:id/status', (req, res) => {
 });
 
 // POST /api/calls - Initiate new call
-app.post('/api/calls', (req, res) => {
+app.post('/api/calls', async (req, res) => {
   try {
-    const { member_id, cpt_code_queried } = req.body;
+    const { member_id, cpt_code_queried, use_simulation } = req.body;
 
     if (!member_id) {
       return res.status(400).json({ error: 'Missing required field: member_id' });
@@ -491,16 +504,61 @@ app.post('/api/calls', (req, res) => {
       return res.status(404).json({ error: 'Member not found' });
     }
 
-    const callSid = `CALL_${uuidv4()}`;
+    // Check if we should use real Twilio calling or simulation
+    const ivrPhoneNumber = process.env.IVR_PHONE_NUMBER;
+    const agentWebhookUrl = process.env.AGENT_WEBHOOK_URL;
+    const twilioPhoneNumber = process.env.TWILIO_PHONE_NUMBER;
 
-    db.run(`INSERT INTO calls (member_id, cpt_code_queried, call_sid, status, started_at)
-            VALUES (?, ?, ?, 'initiated', datetime('now'))`,
-           [member_id, cpt_code_queried || null, callSid]);
+    // If simulation mode or missing config, create a local call record
+    if (use_simulation || !ivrPhoneNumber || !agentWebhookUrl) {
+      const callSid = `CALL_${uuidv4()}`;
 
-    saveDatabase();
+      db.run(`INSERT INTO calls (member_id, cpt_code_queried, call_sid, status, started_at)
+              VALUES (?, ?, ?, 'initiated', datetime('now'))`,
+             [member_id, cpt_code_queried || null, callSid]);
 
-    const newCall = queryOne('SELECT * FROM calls WHERE call_sid = ?', [callSid]);
-    res.status(201).json(newCall);
+      saveDatabase();
+
+      const newCall = queryOne('SELECT * FROM calls WHERE call_sid = ?', [callSid]);
+      return res.status(201).json({ ...newCall, mode: 'simulation' });
+    }
+
+    // Make real Twilio outbound call
+    try {
+      console.log(`Initiating Twilio call to ${ivrPhoneNumber} from ${twilioPhoneNumber}`);
+      console.log(`Agent webhook URL: ${agentWebhookUrl}/agent/voice`);
+
+      const call = await twilioClient.calls.create({
+        to: ivrPhoneNumber,
+        from: twilioPhoneNumber,
+        url: `${agentWebhookUrl}/agent/voice`,
+        statusCallback: `${agentWebhookUrl}/agent/status`,
+        statusCallbackEvent: ['initiated', 'ringing', 'answered', 'completed'],
+        statusCallbackMethod: 'POST',
+        record: true,
+      });
+
+      console.log(`Twilio call initiated: ${call.sid}`);
+
+      // Store call in database with real Twilio SID
+      db.run(`INSERT INTO calls (member_id, cpt_code_queried, call_sid, status, started_at)
+              VALUES (?, ?, ?, 'initiated', datetime('now'))`,
+             [member_id, cpt_code_queried || null, call.sid]);
+
+      saveDatabase();
+
+      const newCall = queryOne('SELECT * FROM calls WHERE call_sid = ?', [call.sid]);
+      res.status(201).json({ ...newCall, mode: 'twilio', twilio_sid: call.sid });
+
+    } catch (twilioError) {
+      console.error('Twilio call error:', twilioError);
+      res.status(500).json({
+        error: 'Failed to initiate Twilio call',
+        details: twilioError.message,
+        hint: 'Check IVR_PHONE_NUMBER and AGENT_WEBHOOK_URL in .env'
+      });
+    }
+
   } catch (error) {
     console.error('Error creating call:', error);
     res.status(500).json({ error: 'Failed to initiate call' });
@@ -677,7 +735,10 @@ app.post('/agent/voice', (req, res) => {
 
     // Determine response based on current state and what we heard
     let twiml = '';
-    const speechLower = (SpeechResult || '').toLowerCase();
+    // Normalize speech: lowercase and remove punctuation for better matching
+    const speechLower = (SpeechResult || '').toLowerCase().replace(/[,\.!?]/g, ' ').replace(/\s+/g, ' ');
+
+    console.log(`Agent processing speech: "${speechLower}"`);
 
     // Get call info from database
     const call = queryOne('SELECT c.*, m.* FROM calls c JOIN members m ON c.member_id = m.member_id WHERE c.call_sid = ?', [CallSid]);
@@ -732,22 +793,26 @@ app.post('/agent/voice', (req, res) => {
 
       twiml = '<?xml version="1.0" encoding="UTF-8"?><Response><Hangup/></Response>';
     }
-    else if (speechLower.includes('prior authorization') && speechLower.includes('press 2')) {
-      // Main menu - press 2
+    else if ((speechLower.includes('prior') && speechLower.includes('authorization') && speechLower.includes('press 2')) ||
+             (speechLower.includes('prior') && speechLower.includes('auth') && speechLower.includes('2'))) {
+      // Main menu - press 2 for prior authorization
+      console.log('Agent: Detected main menu, pressing 2 for prior auth');
       session.transcript.push({ speaker: 'Agent', text: '*pressed 2*' });
-      twiml = createDtmfResponse('2');
+      twiml = createDtmfResponse('2', CallSid);
     }
-    else if (speechLower.includes('check the status') && speechLower.includes('press 1')) {
-      // Prior auth menu - press 1
+    else if ((speechLower.includes('check') && speechLower.includes('status') && speechLower.includes('press 1')) ||
+             (speechLower.includes('check') && speechLower.includes('status') && speechLower.includes('1'))) {
+      // Prior auth menu - press 1 to check status
+      console.log('Agent: Detected prior auth menu, pressing 1 to check status');
       session.transcript.push({ speaker: 'Agent', text: '*pressed 1*' });
       session.state = 'PROVIDING_INFO';
-      twiml = createDtmfResponse('1');
+      twiml = createDtmfResponse('1', CallSid);
     }
     else if (speechLower.includes('member id') && session.memberInfo) {
       // Provide member ID
       const memberId = session.memberInfo.member_id;
       session.transcript.push({ speaker: 'Agent', text: memberId });
-      twiml = createDtmfResponse(memberId.replace(/[^0-9]/g, '') || memberId);
+      twiml = createDtmfResponse(memberId.replace(/[^0-9]/g, '') || memberId, CallSid);
     }
     else if (speechLower.includes('date of birth') && session.memberInfo) {
       // Provide DOB (MMDDYYYY) - date is stored as YYYY-MM-DD
@@ -755,14 +820,14 @@ app.post('/agent/voice', (req, res) => {
       const [year, month, day] = dob.split('-');
       const dobFormatted = month + day + year; // MMDDYYYY
       session.transcript.push({ speaker: 'Agent', text: dobFormatted });
-      twiml = createDtmfResponse(dobFormatted);
+      twiml = createDtmfResponse(dobFormatted, CallSid);
     }
     else if ((speechLower.includes('cpt') || speechLower.includes('procedure code')) && session.memberInfo) {
       // Provide CPT code
       const cptCode = session.memberInfo.cpt_code_queried || '27447';
       session.transcript.push({ speaker: 'Agent', text: cptCode });
       session.state = 'WAITING_RESPONSE';
-      twiml = createDtmfResponse(cptCode);
+      twiml = createDtmfResponse(cptCode, CallSid);
     }
     else {
       // Default: keep listening
@@ -820,11 +885,13 @@ function createGatherResponse(message = '') {
 </Response>`;
 }
 
-function createDtmfResponse(digits) {
+function createDtmfResponse(digits, callSid) {
+  console.log(`Creating DTMF response for digits: ${digits}`);
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Play digits="${digits}"/>
-  <Gather input="speech" action="/agent/voice" method="POST" timeout="10" speechTimeout="auto">
+  <Pause length="1"/>
+  <Gather input="speech dtmf" action="/agent/voice" method="POST" timeout="8" speechTimeout="auto">
   </Gather>
 </Response>`;
 }
