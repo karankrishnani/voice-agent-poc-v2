@@ -145,22 +145,24 @@ export default function CallDetail() {
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Conversation Transcript</h3>
         </div>
         <div className="p-6 space-y-3 max-h-[500px] overflow-y-auto">
-          {call.transcript?.map((turn, index) => (
+          {call.transcript?.map((turn, index) => {
+            const isIvr = turn.speaker?.toLowerCase() === 'ivr';
+            return (
             <div
               key={index}
               className={`p-4 rounded-lg ${
-                turn.speaker === 'ivr'
+                isIvr
                   ? 'transcript-ivr'
                   : 'transcript-agent'
               }`}
             >
               <div className="flex items-center justify-between mb-1">
                 <span className={`text-xs font-medium uppercase ${
-                  turn.speaker === 'ivr'
+                  isIvr
                     ? 'text-gray-500 dark:text-gray-400'
                     : 'text-blue-600 dark:text-blue-400'
                 }`}>
-                  {turn.speaker === 'ivr' ? '🤖 IVR' : '🎙️ Agent'}
+                  {isIvr ? '🤖 IVR' : '🎙️ Agent'}
                 </span>
                 <span className="text-xs text-gray-400">{turn.timestamp}</span>
               </div>
@@ -170,7 +172,8 @@ export default function CallDetail() {
                 <p className="text-gray-900 dark:text-white">{turn.text}</p>
               )}
             </div>
-          ))}
+          );
+          })}
         </div>
       </div>
     </div>
