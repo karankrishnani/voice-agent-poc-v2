@@ -47,15 +47,42 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // TODO: Fetch from API
-    // For now, using placeholder data
-    setStats({
-      totalCalls: 0,
-      successRate: 0,
-      avgDuration: 0,
-    });
-    setRecentCalls([]);
-    setLoading(false);
+    const fetchData = async () => {
+      try {
+        const API_URL = 'http://localhost:3001';
+
+        // Fetch stats and recent calls in parallel
+        const [statsRes, callsRes] = await Promise.all([
+          fetch(`${API_URL}/api/stats`),
+          fetch(`${API_URL}/api/calls`)
+        ]);
+
+        if (statsRes.ok) {
+          const statsData = await statsRes.json();
+          setStats({
+            totalCalls: statsData.totalCalls || 0,
+            successRate: statsData.successRate || 0,
+            avgDuration: statsData.avgDuration || 0,
+          });
+        }
+
+        if (callsRes.ok) {
+          const callsData = await callsRes.json();
+          // Get the 5 most recent calls
+          setRecentCalls(Array.isArray(callsData) ? callsData.slice(0, 5) : []);
+        }
+      } catch (error) {
+        console.error('Failed to fetch dashboard data:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchData();
+
+    // Refresh data every 10 seconds
+    const interval = setInterval(fetchData, 10000);
+    return () => clearInterval(interval);
   }, []);
 
   if (loading) {

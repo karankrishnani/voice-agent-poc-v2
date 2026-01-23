@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom';
 import Dashboard from './pages/Dashboard';
 import NewCall from './pages/NewCall';
@@ -7,6 +7,26 @@ import TestData from './pages/TestData';
 import Settings from './pages/Settings';
 
 function Layout({ children }) {
+  const [darkMode, setDarkMode] = useState(() => {
+    // Check for saved preference or system preference
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('darkMode');
+      if (saved !== null) return saved === 'true';
+      return window.matchMedia('(prefers-color-scheme: dark)').matches;
+    }
+    return false;
+  });
+
+  useEffect(() => {
+    // Apply dark class to document
+    if (darkMode) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+    localStorage.setItem('darkMode', darkMode);
+  }, [darkMode]);
+
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-slate-900">
       {/* Header */}
@@ -24,6 +44,13 @@ function Layout({ children }) {
                 <span className="w-2 h-2 bg-green-500 rounded-full mr-2"></span>
                 System Online
               </span>
+              <button
+                onClick={() => setDarkMode(!darkMode)}
+                className="p-2 rounded-lg bg-gray-100 dark:bg-slate-700 hover:bg-gray-200 dark:hover:bg-slate-600 transition-colors"
+                aria-label="Toggle dark mode"
+              >
+                {darkMode ? '☀️' : '🌙'}
+              </button>
             </div>
           </div>
         </div>

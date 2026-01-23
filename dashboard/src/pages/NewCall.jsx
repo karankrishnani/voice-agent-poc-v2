@@ -14,13 +14,20 @@ export default function NewCall() {
   });
 
   useEffect(() => {
-    // TODO: Fetch members from API
-    setMembers([
-      { member_id: 'ABC123456', first_name: 'John', last_name: 'Smith' },
-      { member_id: 'DEF789012', first_name: 'Sarah', last_name: 'Johnson' },
-      { member_id: 'GHI345678', first_name: 'Michael', last_name: 'Williams' },
-    ]);
-    setLoading(false);
+    const fetchMembers = async () => {
+      try {
+        const response = await fetch('http://localhost:3001/api/members');
+        if (response.ok) {
+          const data = await response.json();
+          setMembers(data);
+        }
+      } catch (error) {
+        console.error('Failed to fetch members:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchMembers();
   }, []);
 
   const handleSubmit = async (e) => {
@@ -29,23 +36,34 @@ export default function NewCall() {
     setCallStatus({ state: 'DIALING', message: 'Initiating call...' });
 
     try {
-      // TODO: Make actual API call
-      // const response = await fetch('/api/calls', {
-      //   method: 'POST',
-      //   headers: { 'Content-Type': 'application/json' },
-      //   body: JSON.stringify(formData),
-      // });
+      // Make actual API call to create the call
+      const response = await fetch('http://localhost:3001/api/calls', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          member_id: formData.memberId,
+          cpt_code_queried: formData.cptCode,
+        }),
+      });
 
-      // Simulate call progress for demo
+      if (!response.ok) {
+        throw new Error('Failed to initiate call');
+      }
+
+      const callData = await response.json();
+
+      // Simulate call progress for demo (since we don't have actual Twilio)
       setTimeout(() => setCallStatus({ state: 'NAVIGATING_MENU', message: 'Connected, navigating IVR menu...' }), 2000);
       setTimeout(() => setCallStatus({ state: 'PROVIDING_INFO', message: 'Providing member information...' }), 4000);
       setTimeout(() => setCallStatus({ state: 'WAITING_RESPONSE', message: 'Waiting for authorization status...' }), 6000);
       setTimeout(() => {
         setCallStatus({ state: 'CALL_COMPLETE', message: 'Call completed!' });
-        // navigate('/calls/1'); // Navigate to call detail
+        // Navigate to call detail after a moment
+        setTimeout(() => navigate(`/calls/${callData.id}`), 1500);
       }, 8000);
     } catch (error) {
       setCallStatus({ state: 'CALL_FAILED', message: 'Call failed: ' + error.message });
+      setSubmitting(false);
     }
   };
 
