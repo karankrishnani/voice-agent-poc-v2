@@ -757,21 +757,30 @@ app.post('/agent/voice', (req, res) => {
       let status = null;
       let validThrough = null;
 
-      const authMatch = SpeechResult.match(/Authorization (PA[\d-]+)/i);
+      // Match auth number - speech recognition may add spaces (e.g., "PA 202478432" instead of "PA2024-78432")
+      const authMatch = SpeechResult.match(/Authorization[,.]?\s*(PA\s*[\d-]+)/i);
       if (authMatch) {
-        authNumber = authMatch[1];
+        // Remove spaces from the auth number
+        authNumber = authMatch[1].replace(/\s+/g, '');
         outcome = 'auth_found';
+        console.log(`Agent: Extracted auth number: ${authNumber}`);
       }
 
       if (speechLower.includes('approved')) {
         status = 'approved';
-        const dateMatch = SpeechResult.match(/through\s+([^.]+)/i);
-        if (dateMatch) validThrough = dateMatch[1].trim();
+        // Match date - handles "through June 30th 2024" or "through June 30th. 2024"
+        const dateMatch = SpeechResult.match(/through\s+([A-Za-z]+\s+\d+(?:st|nd|rd|th)?[,.]?\s*\d{4})/i);
+        if (dateMatch) {
+          validThrough = dateMatch[1].replace(/[.,]/g, '').trim();
+          console.log(`Agent: Extracted valid through date: ${validThrough}`);
+        }
       } else if (speechLower.includes('denied')) {
         status = 'denied';
       } else if (speechLower.includes('pending')) {
         status = 'pending';
       }
+
+      console.log(`Agent: Authorization result - outcome: ${outcome}, authNumber: ${authNumber}, status: ${status}, validThrough: ${validThrough}`);
 
       // Update call in database
       if (call) {
