@@ -13,6 +13,11 @@ This POC automates the tedious process of calling insurance companies:
 
 **Target audience:** Healthcare technology companies looking to automate patient access workflows.
 
+## Screenshot
+
+<img src="insurance-voice-agent.png" alt="Insurance Voice Agent Dashboard Screenshot" width="600" />
+
+
 ## Architecture
 
 ### System Overview
