@@ -1209,7 +1209,7 @@ npm run dev --prefix /Users/karankrishnani/projects/experiment/autonomous-coding
 4. ❌ Pipecat framework requires Python installation verification
 
 ### API Credentials Status
-- ✅ Twilio configured (ACf718e100..., phone: [REDACTED_PHONE])
+- ✅ Twilio configured (see .env)
 - ✅ Deepgram API key configured
 - ✅ ElevenLabs API key configured
 - ✅ Anthropic API key configured
