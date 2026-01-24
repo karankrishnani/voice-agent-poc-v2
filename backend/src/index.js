@@ -738,7 +738,7 @@ app.post('/agent/voice', (req, res) => {
     // Normalize speech: lowercase and remove punctuation for better matching
     const speechLower = (SpeechResult || '').toLowerCase().replace(/[,\.!?]/g, ' ').replace(/\s+/g, ' ');
 
-    console.log(`Agent processing speech: "${speechLower}"`);
+    console.log(`Agent processing speech: "${speechLower}", state: ${session.state}, step: ${session.step}`);
 
     // Get call info from database
     const call = queryOne('SELECT c.*, m.* FROM calls c JOIN members m ON c.member_id = m.member_id WHERE c.call_sid = ?', [CallSid]);
@@ -793,26 +793,47 @@ app.post('/agent/voice', (req, res) => {
 
       twiml = '<?xml version="1.0" encoding="UTF-8"?><Response><Hangup/></Response>';
     }
-    else if ((speechLower.includes('prior') && speechLower.includes('authorization') && speechLower.includes('press 2')) ||
-             (speechLower.includes('prior') && speechLower.includes('auth') && speechLower.includes('2'))) {
-      // Main menu - press 2 for prior authorization
-      console.log('Agent: Detected main menu, pressing 2 for prior auth');
-      session.transcript.push({ speaker: 'Agent', text: '*pressed 2*' });
-      twiml = createDtmfResponse('2', CallSid);
-    }
+    // Prior auth sub-menu - check status option (check this FIRST before main menu patterns)
+    // This menu says "you've reached prior authorization, to check status press 1, to submit new press 2"
     else if ((speechLower.includes('check') && speechLower.includes('status') && speechLower.includes('press 1')) ||
-             (speechLower.includes('check') && speechLower.includes('status') && speechLower.includes('1'))) {
+             (speechLower.includes('existing') && speechLower.includes('authorization') && speechLower.includes('press 1')) ||
+             (speechLower.includes('you\'ve reached') && speechLower.includes('prior')) ||
+             (speechLower.includes('youve reached') && speechLower.includes('prior')) ||
+             (speechLower.includes('reached prior authorization'))) {
       // Prior auth menu - press 1 to check status
-      console.log('Agent: Detected prior auth menu, pressing 1 to check status');
+      console.log('Agent: Detected prior auth sub-menu, pressing 1 to check status');
       session.transcript.push({ speaker: 'Agent', text: '*pressed 1*' });
       session.state = 'PROVIDING_INFO';
       twiml = createDtmfResponse('1', CallSid);
     }
+    // Main menu detection - look for welcome greeting patterns and press 2 for prior auth
+    // Speech recognition often garbles "For claims, press 1. For prior authorization, press 2"
+    else if (session.state === 'NAVIGATING_MENU' &&
+             (speechLower.includes('thank you for calling') || speechLower.includes('welcome')) &&
+             (speechLower.includes('insurance') || speechLower.includes('abc')) &&
+             (speechLower.includes('prior') || speechLower.includes('authorization') || speechLower.includes('claims'))) {
+      // Main menu - press 2 for prior authorization
+      console.log('Agent: Detected main menu welcome, pressing 2 for prior auth');
+      session.transcript.push({ speaker: 'Agent', text: '*pressed 2*' });
+      session.state = 'IN_PRIOR_AUTH_MENU';
+      twiml = createDtmfResponse('2', CallSid);
+    }
+    else if (session.state === 'NAVIGATING_MENU' &&
+             ((speechLower.includes('prior') && speechLower.includes('authorization') && speechLower.includes('press 2')) ||
+              (speechLower.includes('for prior') && speechLower.includes('2')))) {
+      // Explicit main menu - press 2 for prior authorization (only if still navigating)
+      console.log('Agent: Detected explicit prior auth option in main menu, pressing 2');
+      session.transcript.push({ speaker: 'Agent', text: '*pressed 2*' });
+      session.state = 'IN_PRIOR_AUTH_MENU';
+      twiml = createDtmfResponse('2', CallSid);
+    }
     else if (speechLower.includes('member id') && session.memberInfo) {
-      // Provide member ID
-      const memberId = session.memberInfo.member_id;
+      // Provide member ID - speak it so we can include letters
+      const memberId = session.memberInfo.member_id; // e.g., "ABC123456"
+      // Spell it out for clarity: "A B C 1 2 3 4 5 6"
+      const spelledOut = memberId.split('').join(' ');
       session.transcript.push({ speaker: 'Agent', text: memberId });
-      twiml = createDtmfResponse(memberId.replace(/[^0-9]/g, '') || memberId, CallSid);
+      twiml = createSpeechResponse(spelledOut, CallSid);
     }
     else if (speechLower.includes('date of birth') && session.memberInfo) {
       // Provide DOB (MMDDYYYY) - date is stored as YYYY-MM-DD
@@ -829,8 +850,21 @@ app.post('/agent/voice', (req, res) => {
       session.state = 'WAITING_RESPONSE';
       twiml = createDtmfResponse(cptCode, CallSid);
     }
+    else if (speechLower.includes('goodbye') || speechLower.includes('good bye')) {
+      // IVR is hanging up, nothing we can do
+      console.log('Agent: IVR said goodbye, call ending');
+      twiml = '<?xml version="1.0" encoding="UTF-8"?><Response><Hangup/></Response>';
+    }
+    else if (!SpeechResult && session.step === 0) {
+      // Call just connected, no speech yet
+      // Wait briefly then listen - the IVR will speak first
+      session.step = 1;
+      console.log('Agent: Call connected, waiting for IVR menu');
+      twiml = createGatherResponse();
+    }
     else {
       // Default: keep listening
+      console.log('Agent: No pattern matched, continuing to listen');
       twiml = createGatherResponse();
     }
 
@@ -885,9 +919,11 @@ app.post('/agent/status', (req, res) => {
 
 // Helper functions for TwiML generation
 function createGatherResponse(message = '') {
+  // Use shorter speechTimeout (2 seconds) to get faster results
+  // This means we'll get partial phrases but can respond more quickly
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Gather input="speech" action="/agent/voice" method="POST" timeout="10" speechTimeout="auto" enhanced="true" language="en-US">
+  <Gather input="speech dtmf" action="/agent/voice" method="POST" timeout="15" speechTimeout="2" enhanced="true" language="en-US">
     ${message ? `<Say voice="Polly.Matthew">${message}</Say>` : ''}
   </Gather>
 </Response>`;
@@ -895,9 +931,20 @@ function createGatherResponse(message = '') {
 
 function createDtmfResponse(digits, callSid) {
   console.log(`Creating DTMF response for digits: ${digits}`);
+  // Send DTMF tones with 'w' prefix for a small pause, then listen for response
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Play digits="${digits}"/>
+  <Play digits="w${digits}"/>
+  <Gather input="speech dtmf" action="/agent/voice" method="POST" timeout="15" speechTimeout="2" enhanced="true" language="en-US">
+  </Gather>
+</Response>`;
+}
+
+function createSpeechResponse(text, callSid) {
+  console.log(`Creating speech response: ${text}`);
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say voice="Polly.Matthew">${text}</Say>
   <Pause length="1"/>
   <Gather input="speech dtmf" action="/agent/voice" method="POST" timeout="8" speechTimeout="auto" enhanced="true" language="en-US">
   </Gather>

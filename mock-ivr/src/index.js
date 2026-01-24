@@ -27,7 +27,7 @@ ${content}
 app.post('/voice', (req, res) => {
   res.type('text/xml');
   res.send(twimlResponse(`
-  <Gather input="dtmf" numDigits="1" action="/menu" method="POST">
+  <Gather input="dtmf" numDigits="1" action="/menu" method="POST" timeout="15">
     <Say voice="Polly.Joanna">
       Thank you for calling ABC Insurance. Para español, oprima el dos.
       For claims, press 1. For prior authorization, press 2.
@@ -78,7 +78,7 @@ app.post('/menu', (req, res) => {
 app.post('/prior-auth-menu', (req, res) => {
   res.type('text/xml');
   res.send(twimlResponse(`
-  <Gather input="dtmf" numDigits="1" action="/prior-auth-route" method="POST">
+  <Gather input="dtmf" numDigits="1" action="/prior-auth-route" method="POST" timeout="15">
     <Say voice="Polly.Joanna">
       You've reached prior authorization.
       To check the status of an existing authorization, press 1.
@@ -127,7 +127,7 @@ app.post('/prior-auth-route', (req, res) => {
 app.post('/collect-member-id', (req, res) => {
   res.type('text/xml');
   res.send(twimlResponse(`
-  <Gather input="dtmf speech" numDigits="9" action="/collect-dob" method="POST" timeout="10">
+  <Gather input="dtmf speech" action="/collect-dob" method="POST" timeout="10" speechTimeout="auto" finishOnKey="#">
     <Say voice="Polly.Joanna">Please enter or say your 9-digit member ID.</Say>
   </Gather>
   <Say voice="Polly.Joanna">We didn't receive any input.</Say>
@@ -138,10 +138,11 @@ app.post('/collect-member-id', (req, res) => {
 // Collect Date of Birth
 app.post('/collect-dob', (req, res) => {
   const memberId = req.body.Digits || req.body.SpeechResult || '';
+  console.log(`Received member ID: ${memberId}`);
   const encodedMemberId = encodeURIComponent(memberId);
   res.type('text/xml');
   res.send(twimlResponse(`
-  <Gather input="dtmf speech" numDigits="8" action="/collect-cpt?memberId=${encodedMemberId}" method="POST" timeout="10">
+  <Gather input="dtmf speech" action="/collect-cpt?memberId=${encodedMemberId}" method="POST" timeout="10" speechTimeout="auto" finishOnKey="#">
     <Say voice="Polly.Joanna">Please enter or say the patient's date of birth as 8 digits. Month, day, and 4 digit year.</Say>
   </Gather>
   <Say voice="Polly.Joanna">We didn't receive any input.</Say>
@@ -153,11 +154,12 @@ app.post('/collect-dob', (req, res) => {
 app.post('/collect-cpt', (req, res) => {
   const memberId = req.query.memberId || '';
   const dob = req.body.Digits || req.body.SpeechResult || '';
+  console.log(`Received DOB: ${dob}, Member ID: ${memberId}`);
   const encodedMemberId = encodeURIComponent(memberId);
   const encodedDob = encodeURIComponent(dob);
   res.type('text/xml');
   res.send(twimlResponse(`
-  <Gather input="dtmf speech" numDigits="5" action="/lookup-auth?memberId=${encodedMemberId}&amp;dob=${encodedDob}" method="POST" timeout="10">
+  <Gather input="dtmf speech" action="/lookup-auth?memberId=${encodedMemberId}&amp;dob=${encodedDob}" method="POST" timeout="10" speechTimeout="auto" finishOnKey="#">
     <Say voice="Polly.Joanna">Please enter the CPT procedure code you're inquiring about.</Say>
   </Gather>
   <Say voice="Polly.Joanna">We didn't receive any input.</Say>
@@ -167,9 +169,11 @@ app.post('/collect-cpt', (req, res) => {
 
 // Lookup Authorization (mock response based on test data)
 app.post('/lookup-auth', (req, res) => {
-  const memberId = req.query.memberId;
+  const memberId = (req.query.memberId || '').toUpperCase().replace(/\s+/g, '');
   const dob = req.query.dob;
-  const cptCode = req.body.Digits || req.body.SpeechResult;
+  const cptCode = (req.body.Digits || req.body.SpeechResult || '').replace(/\s+/g, '');
+
+  console.log(`Lookup auth - Member ID: ${memberId}, DOB: ${dob}, CPT: ${cptCode}`);
 
   res.type('text/xml');
 
