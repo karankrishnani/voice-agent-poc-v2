@@ -887,7 +887,7 @@ app.post('/agent/status', (req, res) => {
 function createGatherResponse(message = '') {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Gather input="speech" action="/agent/voice" method="POST" timeout="10" speechTimeout="auto">
+  <Gather input="speech" action="/agent/voice" method="POST" timeout="10" speechTimeout="auto" enhanced="true" language="en-US">
     ${message ? `<Say voice="Polly.Matthew">${message}</Say>` : ''}
   </Gather>
 </Response>`;
@@ -899,7 +899,7 @@ function createDtmfResponse(digits, callSid) {
 <Response>
   <Play digits="${digits}"/>
   <Pause length="1"/>
-  <Gather input="speech dtmf" action="/agent/voice" method="POST" timeout="8" speechTimeout="auto">
+  <Gather input="speech dtmf" action="/agent/voice" method="POST" timeout="8" speechTimeout="auto" enhanced="true" language="en-US">
   </Gather>
 </Response>`;
 }
