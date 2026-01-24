@@ -856,12 +856,20 @@ app.post('/agent/status', (req, res) => {
       if (CallStatus === 'completed') status = 'completed';
       else if (['failed', 'busy', 'no-answer', 'canceled'].includes(CallStatus)) status = 'failed';
 
+      // Get session transcript before cleanup
+      const session = activeAgentSessions.get(CallSid);
+      console.log(`Session for ${CallSid}:`, session ? `found with ${session.transcript?.length || 0} transcript entries` : 'NOT FOUND');
+      console.log(`Active sessions:`, Array.from(activeAgentSessions.keys()));
+      const transcript = session?.transcript || [];
+
+      // Save transcript if we have one (use CASE to not overwrite if already saved with content)
       db.run(`UPDATE calls SET
               status = ?,
               duration_seconds = COALESCE(?, duration_seconds),
+              transcript = CASE WHEN transcript IS NULL OR transcript = '' OR transcript = '[]' THEN ? ELSE transcript END,
               ended_at = CASE WHEN ? IN ('completed', 'failed') THEN datetime('now') ELSE ended_at END
               WHERE call_sid = ?`,
-             [status, CallDuration ? parseInt(CallDuration) : null, status, CallSid]);
+             [status, CallDuration ? parseInt(CallDuration) : null, JSON.stringify(transcript), status, CallSid]);
       saveDatabase();
 
       // Clean up session
