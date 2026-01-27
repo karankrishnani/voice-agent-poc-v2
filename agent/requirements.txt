@@ -1,6 +1,10 @@
 # Insurance Voice AI Agent - Python Dependencies
 
-# Pipecat - Voice AI framework
+# Phase 2: FastAPI WebSocket Server
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+
+# Pipecat - Voice AI framework (Phase 1)
 pipecat-ai[daily,silero,deepgram,elevenlabs,anthropic]==0.0.44
 
 # Twilio for telephony
@@ -18,6 +22,7 @@ elevenlabs>=1.0.0
 # Async support
 aiohttp>=3.9.0
 websockets>=12.0
+httpx>=0.26.0
 
 # Environment and config
 python-dotenv>=1.0.0
