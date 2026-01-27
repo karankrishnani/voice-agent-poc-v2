@@ -1988,12 +1988,23 @@ uvicorn src.server:app --port 8000 --reload
 - Feature 122: Humana provider (numeric IDs) ✅
 - Feature 123: BCBS provider (spells numbers) ✅
 - Feature 124: Tricare provider (nested menus) ✅
-- **Total new features marked passing: 5** (including Feature 82 correction)
+- Feature 125: Invalid member ID scenario (XXX prefix) ✅
+- Feature 126: Expired auth scenario (EXP prefix) ✅
+- Feature 127: System error scenario (ERR prefix) ✅
+- Feature 128: Multiple auths scenario (MUL prefix) ✅
+- Feature 129: Partial match scenario (PAR prefix) ✅
+- Feature 130: Recent call scenario (REC prefix) ✅
+- Feature 131: No auth required (CPT 99xxx) ✅
+- Feature 132: Environment variables for ConversationRelay ✅
+- Feature 133: Python agent environment configuration ✅
+- Feature 134: Python requirements.txt updated ✅
+- Feature 135: Backwards compatibility preserved ✅
+- **Total new features marked passing: 16** (from 81 to 97)
 
 ### Current Feature Stats
-- **Passing:** 86/141
-- **Percentage:** 61.0%
-- **Improvement this session:** +5 features (from 57.4% to 61.0%)
+- **Passing:** 97/141
+- **Percentage:** 68.8%
+- **Improvement this session:** +16 features (from 57.4% to 68.8%)
 
 ### Code Changes
 - `mock-ivr/src/index.js`: Added 4 complete provider implementations
