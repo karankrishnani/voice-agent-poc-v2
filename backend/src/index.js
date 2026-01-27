@@ -20,6 +20,13 @@ console.log('  TWILIO_ACCOUNT_SID:', process.env.TWILIO_ACCOUNT_SID ? 'SET' : 'N
 console.log('  IVR_PHONE_NUMBER:', process.env.IVR_PHONE_NUMBER || 'NOT SET');
 console.log('  AGENT_WEBHOOK_URL:', process.env.AGENT_WEBHOOK_URL || 'NOT SET');
 
+// Phase 2: Python Agent configuration
+const PYTHON_AGENT_URL = process.env.PYTHON_AGENT_URL || 'http://localhost:8000';
+const WEBSOCKET_URL = process.env.WEBSOCKET_URL || 'ws://localhost:8000/ws';
+console.log('Python Agent Config:');
+console.log('  PYTHON_AGENT_URL:', PYTHON_AGENT_URL);
+console.log('  WEBSOCKET_URL:', WEBSOCKET_URL);
+
 // Initialize Twilio client
 const twilioClient = twilio(
   process.env.TWILIO_ACCOUNT_SID,

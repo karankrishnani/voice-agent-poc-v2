@@ -168,6 +168,7 @@ app.post('/collect-cpt', (req, res) => {
 });
 
 // Lookup Authorization (mock response based on test data)
+// Supports error scenarios via member ID prefixes - see docs/PHASE2-STREAMING.md
 app.post('/lookup-auth', (req, res) => {
   const memberId = (req.query.memberId || '').toUpperCase().replace(/\s+/g, '');
   const dob = req.query.dob;
@@ -177,10 +178,159 @@ app.post('/lookup-auth', (req, res) => {
 
   res.type('text/xml');
 
-  // Mock responses based on member ID patterns
-  // In production, this would query the actual database
+  // ============ CPT-BASED TRIGGERS ============
 
-  // ABC123456 has approved auth for 27447
+  // CPT codes starting with 99 (E&M codes) - no prior auth required
+  if (cptCode && cptCode.startsWith('99')) {
+    res.send(twimlResponse(`
+      <Say voice="Polly.Joanna">
+        Please hold while I look up that information.
+      </Say>
+      <Pause length="2"/>
+      <Say voice="Polly.Joanna">
+        Procedure code ${cptCode} is an evaluation and management code and does not require prior authorization.
+        No authorization is needed for this service.
+      </Say>
+      <Hangup/>
+    `));
+    return;
+  }
+
+  // ============ ERROR SCENARIOS (prefix-based triggers) ============
+
+  // XXX* prefix: Invalid/Unknown member ID - member not found in system
+  if (memberId && memberId.startsWith('XXX')) {
+    res.send(twimlResponse(`
+      <Say voice="Polly.Joanna">
+        Please hold while I look up that information.
+      </Say>
+      <Pause length="2"/>
+      <Say voice="Polly.Joanna">
+        I'm sorry, I could not find a member with ID ${memberId.split('').join(' ')}.
+        Please verify the member ID and try again.
+      </Say>
+      <Hangup/>
+    `));
+    return;
+  }
+
+  // EXP* prefix: Expired authorization
+  if (memberId && memberId.startsWith('EXP')) {
+    res.send(twimlResponse(`
+      <Say voice="Polly.Joanna">
+        Please hold while I look up that information.
+      </Say>
+      <Pause length="2"/>
+      <Say voice="Polly.Joanna">
+        Authorization PA2023-12345 for procedure code ${cptCode} has expired.
+        The authorization was valid through December 31, 2023.
+        A new authorization will need to be submitted.
+      </Say>
+      <Hangup/>
+    `));
+    return;
+  }
+
+  // ERR* prefix: System error during lookup
+  if (memberId && memberId.startsWith('ERR')) {
+    res.send(twimlResponse(`
+      <Say voice="Polly.Joanna">
+        Please hold while I look up that information.
+      </Say>
+      <Pause length="2"/>
+      <Say voice="Polly.Joanna">
+        I apologize, but we are experiencing a system error and cannot retrieve authorization information at this time.
+        Please try again later or contact member services for assistance.
+        Error code: SYS-500.
+      </Say>
+      <Hangup/>
+    `));
+    return;
+  }
+
+  // MUL* prefix: Multiple authorizations found - agent must select by CPT
+  if (memberId && memberId.startsWith('MUL')) {
+    if (cptCode === '27447') {
+      res.send(twimlResponse(`
+        <Say voice="Polly.Joanna">
+          Please hold while I look up that information.
+        </Say>
+        <Pause length="2"/>
+        <Say voice="Polly.Joanna">
+          I found multiple authorizations for this member.
+          For procedure code ${cptCode}, knee replacement: Authorization PA2024-MUL01 is approved through June 30, 2024.
+        </Say>
+        <Hangup/>
+      `));
+    } else if (cptCode === '29881') {
+      res.send(twimlResponse(`
+        <Say voice="Polly.Joanna">
+          Please hold while I look up that information.
+        </Say>
+        <Pause length="2"/>
+        <Say voice="Polly.Joanna">
+          I found multiple authorizations for this member.
+          For procedure code ${cptCode}, arthroscopy: Authorization PA2024-MUL02 is approved through August 15, 2024.
+        </Say>
+        <Hangup/>
+      `));
+    } else {
+      res.send(twimlResponse(`
+        <Say voice="Polly.Joanna">
+          Please hold while I look up that information.
+        </Say>
+        <Pause length="2"/>
+        <Say voice="Polly.Joanna">
+          I found multiple authorizations for this member, but none match procedure code ${cptCode}.
+          Please verify the procedure code and try again.
+        </Say>
+        <Hangup/>
+      `));
+    }
+    return;
+  }
+
+  // PAR* prefix: Partial match - requires additional identity confirmation
+  if (memberId && memberId.startsWith('PAR')) {
+    res.send(twimlResponse(`
+      <Say voice="Polly.Joanna">
+        Please hold while I look up that information.
+      </Say>
+      <Pause length="2"/>
+      <Say voice="Polly.Joanna">
+        I found a partial match for this member, but I need to verify additional information.
+        Can you please confirm the patient's last name?
+      </Say>
+      <Gather input="speech" action="/confirm-identity?memberId=${memberId}&amp;cptCode=${cptCode}" method="POST" timeout="10" speechTimeout="auto">
+        <Say voice="Polly.Joanna">Please say the patient's last name now.</Say>
+      </Gather>
+      <Say voice="Polly.Joanna">I didn't hear a response. Goodbye.</Say>
+      <Hangup/>
+    `));
+    return;
+  }
+
+  // REC* prefix: Recent call - status unchanged from previous inquiry
+  if (memberId && memberId.startsWith('REC')) {
+    res.send(twimlResponse(`
+      <Say voice="Polly.Joanna">
+        Please hold while I look up that information.
+      </Say>
+      <Pause length="2"/>
+      <Say voice="Polly.Joanna">
+        I see that you recently called about this authorization.
+        Authorization PA2024-REC01 for procedure code ${cptCode} is still pending review.
+        The status has not changed since your last inquiry on January 25th.
+        Please allow 3 to 5 business days for a determination.
+      </Say>
+      <Hangup/>
+    `));
+    return;
+  }
+
+  // ============ STANDARD SCENARIOS ============
+
+  // ABC* prefix: Approved auth for 27447
   if (memberId && memberId.startsWith('ABC') && cptCode === '27447') {
     res.send(twimlResponse(`
       <Say voice="Polly.Joanna">
@@ -194,7 +344,7 @@ app.post('/lookup-auth', (req, res) => {
       <Hangup/>
     `));
   }
-  // DEF789012 has denied auth
+  // DEF* prefix: Denied auth
   else if (memberId && memberId.startsWith('DEF')) {
     res.send(twimlResponse(`
       <Say voice="Polly.Joanna">
@@ -209,7 +359,7 @@ app.post('/lookup-auth', (req, res) => {
       <Hangup/>
     `));
   }
-  // GHI345678 has pending auth
+  // GHI* prefix: Pending auth
   else if (memberId && memberId.startsWith('GHI')) {
     res.send(twimlResponse(`
       <Say voice="Polly.Joanna">
@@ -233,6 +383,36 @@ app.post('/lookup-auth', (req, res) => {
       <Say voice="Polly.Joanna">
         No authorization found for this member and procedure code.
         Please verify the information and try again, or contact member services for assistance.
+      </Say>
+      <Hangup/>
+    `));
+  }
+});
+
+// Helper endpoint for PAR* partial match identity confirmation
+app.post('/confirm-identity', (req, res) => {
+  const memberId = req.query.memberId || '';
+  const cptCode = req.query.cptCode || '';
+  const lastName = req.body.SpeechResult || '';
+
+  console.log(`Identity confirmation - Member: ${memberId}, Last name: ${lastName}`);
+
+  res.type('text/xml');
+
+  // For demo purposes, accept any last name that starts with 'S'
+  if (lastName.toLowerCase().startsWith('s')) {
+    res.send(twimlResponse(`
+      <Say voice="Polly.Joanna">
+        Thank you for confirming. I found your authorization.
+        Authorization PA2024-PAR01 for procedure code ${cptCode} is approved through July 31, 2024.
+      </Say>
+      <Hangup/>
+    `));
+  } else {
+    res.send(twimlResponse(`
+      <Say voice="Polly.Joanna">
+        I'm sorry, the information provided does not match our records.
+        Please contact member services for assistance.
       </Say>
       <Hangup/>
     `));
