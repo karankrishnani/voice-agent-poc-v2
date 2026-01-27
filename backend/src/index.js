@@ -675,6 +675,57 @@ app.post('/api/calls/stream', async (req, res) => {
   }
 });
 
+// POST /api/calls/:id/extraction - Receive extracted authorization data from Python agent (Feature 98)
+// See docs/PHASE2-STREAMING.md Data Flow step 7
+app.post('/api/calls/:id/extraction', (req, res) => {
+  try {
+    const { auth_number, status, valid_through, denial_reason, transcript } = req.body;
+
+    // Find the call by id or call_sid
+    const existing = queryOne('SELECT * FROM calls WHERE id = ? OR call_sid = ?', [req.params.id, req.params.id]);
+    if (!existing) {
+      return res.status(404).json({ error: 'Call not found' });
+    }
+
+    console.log(`Extraction received for call ${req.params.id}:`, {
+      auth_number,
+      status,
+      valid_through
+    });
+
+    // Determine outcome based on status
+    let outcome = 'auth_not_found';
+    if (auth_number && status) {
+      outcome = 'auth_found';
+    }
+
+    // Update call record with extracted data
+    db.run(`UPDATE calls SET
+            status = 'completed',
+            outcome = ?,
+            extracted_auth_number = ?,
+            extracted_status = ?,
+            extracted_valid_through = ?,
+            transcript = COALESCE(?, transcript),
+            ended_at = datetime('now')
+            WHERE id = ?`,
+           [outcome, auth_number || null, status || null, valid_through || null,
+            transcript ? JSON.stringify(transcript) : null, existing.id]);
+
+    saveDatabase();
+
+    const updatedCall = queryOne('SELECT * FROM calls WHERE id = ?', [existing.id]);
+    res.json({
+      message: 'Extraction saved successfully',
+      call: updatedCall
+    });
+
+  } catch (error) {
+    console.error('Error saving extraction:', error);
+    res.status(500).json({ error: 'Failed to save extraction data' });
+  }
+});
+
 // PUT /api/calls/:id - Update call
 app.put('/api/calls/:id', (req, res) => {
   try {
