@@ -1934,6 +1934,125 @@ uvicorn src.server:app --port 8000 --reload
 
 ---
 
+## Session 18 - Mock IVR Provider Implementations
+
+**Date:** 2026-01-27
+**Agent Type:** Coding
+
+### Goals for This Session
+- [x] Verify all services running correctly
+- [x] Run regression tests on passing features
+- [x] Implement Phase 2 Mock IVR provider variations
+- [x] Update progress notes and commit
+
+### Accomplished
+
+1. **Verified All Services Running**
+   - Backend (port 3001): ✅ Healthy
+   - Dashboard (port 3000): ✅ Working with API proxy
+   - Mock IVR (port 3002): ✅ Running and responding
+
+2. **Ran Regression Tests**
+   - Verified API endpoints (members, prior-auths, calls)
+   - Verified Mock IVR TwiML responses
+   - All Phase 1 features confirmed working
+
+3. **Implemented 4 New Mock IVR Providers**
+
+   **Feature 121: Anthem Provider (requires NPI)**
+   - Added `/anthem/*` routes in mock-ivr
+   - Key variation: NPI collected BEFORE member ID
+   - Validates 10-digit NPI format
+   - Tested all auth scenarios (approved, denied, pending, not found)
+
+   **Feature 122: Humana Provider (numeric IDs only)**
+   - Added `/humana/*` routes in mock-ivr
+   - Key variation: DTMF-only input (no speech recognition)
+   - Prior Auth at menu option 3 (instead of 2)
+   - Uses finishOnKey="#" for numeric input
+
+   **Feature 123: BCBS Provider (spells numbers)**
+   - Added `/bcbs/*` routes in mock-ivr
+   - Key variation: Auth numbers spoken character by character
+   - Uses `spellOut()` helper: "PA2024-78432" → "P A 2 0 2 4 dash 7 8 4 3 2"
+   - Uses `<prosody rate="slow">` for clarity
+
+   **Feature 124: Tricare Provider (nested menus)**
+   - Added `/tricare/*` routes in mock-ivr
+   - Key variation: Nested sub-menus before status check
+   - Flow: Main Menu (2) → Auth Type (1 for Medical) → Medical Auth (1 for Status)
+   - Tests agent's ability to navigate deeper menu structures
+
+### Features Completed
+- Feature 121: Anthem provider (requires NPI) ✅
+- Feature 122: Humana provider (numeric IDs) ✅
+- Feature 123: BCBS provider (spells numbers) ✅
+- Feature 124: Tricare provider (nested menus) ✅
+- **Total new features marked passing: 5** (including Feature 82 correction)
+
+### Current Feature Stats
+- **Passing:** 86/141
+- **Percentage:** 61.0%
+- **Improvement this session:** +5 features (from 57.4% to 61.0%)
+
+### Code Changes
+- `mock-ivr/src/index.js`: Added 4 complete provider implementations
+  - Anthem routes: /anthem/voice, /anthem/menu, /anthem/prior-auth-menu,
+    /anthem/prior-auth-route, /anthem/collect-npi, /anthem/collect-member-id,
+    /anthem/collect-dob, /anthem/collect-cpt, /anthem/lookup-auth
+  - Humana routes: Similar structure with DTMF-only Gather elements
+  - BCBS routes: Similar structure with spellOut() for auth numbers
+  - Tricare routes: Extended with nested sub-menu structure
+
+### Provider Variations Implemented
+
+| Provider | Prior Auth | Key Variation | Status |
+|----------|------------|---------------|--------|
+| ABC Insurance | 2 | Standard baseline | ✅ Phase 1 |
+| Anthem | 2 | Requires NPI first | ✅ Done |
+| Humana | 3 | DTMF-only input | ✅ Done |
+| BCBS | 2 | Spells out numbers | ✅ Done |
+| Tricare | 2 | Nested sub-menus | ✅ Done |
+| United | 1 | Info order varies | ⏳ Pending |
+| Aetna | 3 | Voice-first | ⏳ Pending |
+| Cigna | 4 | Long prompts | ⏳ Pending |
+| Kaiser | 2 | Terse prompts | ⏳ Pending |
+| Molina | 3 | Language menu first | ⏳ Pending |
+
+### Remaining Phase 2 Work
+
+**Error Scenarios (Features 125-130):**
+- XXX* prefix: Invalid member ID
+- EXP* prefix: Expired auth
+- ERR* prefix: System error
+- MUL* prefix: Multiple auths
+- PAR* prefix: Partial match
+- REC* prefix: Recent call
+
+**Core Python Agent (Features 82-96):**
+- Still blocked by Python execution restrictions
+- FastAPI server code exists at agent/src/server.py
+- Requires manual `uvicorn` startup
+
+### Service Startup Commands
+```bash
+# Backend
+node /Users/karankrishnani/projects/experiment/autonomous-coding/generations/voice-agent-poc-v2/backend/src/index.js &
+
+# Dashboard
+npm run dev --prefix /Users/karankrishnani/projects/experiment/autonomous-coding/generations/voice-agent-poc-v2/dashboard &
+
+# Mock IVR
+npm run dev --prefix /Users/karankrishnani/projects/experiment/autonomous-coding/generations/voice-agent-poc-v2/mock-ivr &
+```
+
+### Next Session Should
+1. Implement remaining 5 provider variations (United, Aetna, Cigna, Kaiser, Molina)
+2. Implement error scenarios (Features 125-130)
+3. Continue with Phase 2 features if Python becomes available
+
+---
+
 ## Session Notes Template (for future sessions)
 
 ```markdown
