@@ -76,10 +76,20 @@ export default function NewCall() {
 
       const callData = await response.json();
 
-      // Check if this is a real Twilio call or simulation mode
-      if (callData.mode === 'twilio') {
-        // Real Twilio call - poll for status updates
-        setCallStatus({ state: 'DIALING', message: 'Calling IVR... Answer your phone!' });
+      // Check if this is a real Twilio call, streaming, or simulation mode
+      if (callData.mode === 'twilio' || callData.mode === 'streaming') {
+        // Real Twilio or streaming call - poll for status updates
+        if (callData.mode === 'streaming' && callData.warning) {
+          // Python agent not reachable - show warning and fail
+          setCallStatus({ state: 'CALL_FAILED', message: 'Python agent not running. Start the agent or disable streaming mode.' });
+          setSubmitting(false);
+          return;
+        }
+
+        const statusMessage = callData.mode === 'streaming'
+          ? 'Streaming call initiated...'
+          : 'Calling IVR... Answer your phone!';
+        setCallStatus({ state: 'DIALING', message: statusMessage });
 
         // Poll for call status
         const pollStatus = async () => {
@@ -116,7 +126,7 @@ export default function NewCall() {
         };
 
         pollStatus();
-      } else {
+      } else if (callData.mode === 'simulation') {
         // Simulation mode - run the simulation
         setCallStatus({ state: 'NAVIGATING_MENU', message: 'Connected, navigating IVR (simulation)...' });
 
@@ -140,6 +150,10 @@ export default function NewCall() {
           setCallStatus({ state: 'CALL_FAILED', message: 'Call failed: ' + (result.call.outcome || 'Unknown error') });
           setSubmitting(false);
         }
+      } else {
+        // Unknown mode
+        setCallStatus({ state: 'CALL_FAILED', message: `Unknown call mode: ${callData.mode}` });
+        setSubmitting(false);
       }
     } catch (error) {
       setCallStatus({ state: 'CALL_FAILED', message: 'Call failed: ' + error.message });
