@@ -679,7 +679,7 @@ app.post('/api/calls/stream', async (req, res) => {
 // See docs/PHASE2-STREAMING.md Data Flow step 7
 app.post('/api/calls/:id/extraction', (req, res) => {
   try {
-    const { auth_number, status, valid_through, denial_reason, transcript } = req.body;
+    const { auth_number, status, valid_through, denial_reason, transcript, failure_reason } = req.body;
 
     // Find the call by id or call_sid
     const existing = queryOne('SELECT * FROM calls WHERE id = ? OR call_sid = ?', [req.params.id, req.params.id]);
@@ -690,18 +690,27 @@ app.post('/api/calls/:id/extraction', (req, res) => {
     console.log(`Extraction received for call ${req.params.id}:`, {
       auth_number,
       status,
-      valid_through
+      valid_through,
+      failure_reason
     });
 
-    // Determine outcome based on status
+    // Determine outcome based on status or failure
     let outcome = 'auth_not_found';
-    if (auth_number && status) {
+    let callStatus = 'completed';
+
+    if (failure_reason) {
+      // Feature 112: Specific failure reasons saved to database
+      // failure_reason can be: max_uncertain_exceeded, max_menu_retries, max_info_retries, ivr_timeout
+      outcome = failure_reason;
+      callStatus = 'failed';
+      console.log(`Call ${req.params.id} failed with reason: ${failure_reason}`);
+    } else if (auth_number && status) {
       outcome = 'auth_found';
     }
 
     // Update call record with extracted data
     db.run(`UPDATE calls SET
-            status = 'completed',
+            status = ?,
             outcome = ?,
             extracted_auth_number = ?,
             extracted_status = ?,
@@ -709,20 +718,59 @@ app.post('/api/calls/:id/extraction', (req, res) => {
             transcript = COALESCE(?, transcript),
             ended_at = datetime('now')
             WHERE id = ?`,
-           [outcome, auth_number || null, status || null, valid_through || null,
+           [callStatus, outcome, auth_number || null, status || null, valid_through || null,
             transcript ? JSON.stringify(transcript) : null, existing.id]);
 
     saveDatabase();
 
     const updatedCall = queryOne('SELECT * FROM calls WHERE id = ?', [existing.id]);
     res.json({
-      message: 'Extraction saved successfully',
+      message: failure_reason ? 'Failure reason saved' : 'Extraction saved successfully',
       call: updatedCall
     });
 
   } catch (error) {
     console.error('Error saving extraction:', error);
     res.status(500).json({ error: 'Failed to save extraction data' });
+  }
+});
+
+// POST /api/calls/:id/failure - Record call failure with specific reason (Feature 112)
+// Failure reasons: max_uncertain_exceeded, max_menu_retries, max_info_retries, ivr_timeout, agent_error
+app.post('/api/calls/:id/failure', (req, res) => {
+  try {
+    const { reason, transcript } = req.body;
+
+    if (!reason) {
+      return res.status(400).json({ error: 'Failure reason required' });
+    }
+
+    const existing = queryOne('SELECT * FROM calls WHERE id = ? OR call_sid = ?', [req.params.id, req.params.id]);
+    if (!existing) {
+      return res.status(404).json({ error: 'Call not found' });
+    }
+
+    console.log(`Call ${req.params.id} failed: ${reason}`);
+
+    db.run(`UPDATE calls SET
+            status = 'failed',
+            outcome = ?,
+            transcript = COALESCE(?, transcript),
+            ended_at = datetime('now')
+            WHERE id = ?`,
+           [reason, transcript ? JSON.stringify(transcript) : null, existing.id]);
+
+    saveDatabase();
+
+    const updatedCall = queryOne('SELECT * FROM calls WHERE id = ?', [existing.id]);
+    res.json({
+      message: 'Call failure recorded',
+      call: updatedCall
+    });
+
+  } catch (error) {
+    console.error('Error recording failure:', error);
+    res.status(500).json({ error: 'Failed to record failure' });
   }
 });
 

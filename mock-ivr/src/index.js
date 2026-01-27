@@ -1,18 +1,69 @@
 import express from 'express';
 import dotenv from 'dotenv';
+import { createRequire } from 'module';
 
 dotenv.config();
 
+// Import providers (CommonJS module)
+const require = createRequire(import.meta.url);
+const { getProvider, getRandomProvider, getProviderList } = require('./providers.js');
+
 const app = express();
 const PORT = process.env.MOCK_IVR_PORT || 3002;
+
+// Store current provider per call (keyed by CallSid)
+const callProviders = new Map();
 
 // Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+/**
+ * Feature 114: Get provider for a call
+ * - Uses ?provider query param if specified
+ * - Falls back to random provider
+ * - Stores provider for duration of call
+ */
+function getProviderForCall(req) {
+  const callSid = req.body.CallSid || 'default';
+
+  // Check if we already have a provider for this call
+  if (callProviders.has(callSid)) {
+    return callProviders.get(callSid);
+  }
+
+  // Get provider from query param or random
+  const providerId = req.query.provider;
+  let provider;
+
+  if (providerId) {
+    provider = getProvider(providerId);
+    if (!provider) {
+      console.log(`Provider '${providerId}' not found, using random`);
+      provider = getRandomProvider();
+    }
+  } else {
+    provider = getRandomProvider();
+  }
+
+  // Store for this call
+  callProviders.set(callSid, provider);
+  console.log(`Call ${callSid} using provider: ${provider.name}`);
+
+  return provider;
+}
+
 // Health check
 app.get('/health', (req, res) => {
   res.json({ status: 'healthy', service: 'mock-ivr', timestamp: new Date().toISOString() });
+});
+
+// Feature 114: Get available providers
+app.get('/providers', (req, res) => {
+  res.json({
+    providers: getProviderList(),
+    count: getProviderList().length
+  });
 });
 
 // TwiML response helper
@@ -23,53 +74,70 @@ ${content}
 </Response>`;
 }
 
-// Welcome/Main Menu
+// Welcome/Main Menu - Feature 114: Dynamic provider routing
 app.post('/voice', (req, res) => {
+  const provider = getProviderForCall(req);
+  const providerId = req.query.provider || 'random';
+
   res.type('text/xml');
+
+  // Build menu prompt with provider's phrases
+  const welcomePhrase = provider.phrases.welcome || `Thank you for calling ${provider.name}.`;
+  const menuPhrase = provider.phrases.main_menu || 'For prior authorization, press 2. To repeat, press 9.';
+
+  // Include language menu if provider has it (e.g., Molina)
+  const languagePhrase = provider.phrases.language ? `<Say voice="Polly.Joanna">${provider.phrases.language}</Say><Pause length="2"/>` : '';
+
   res.send(twimlResponse(`
-  <Gather input="dtmf" numDigits="1" action="/menu" method="POST" timeout="15">
+  ${languagePhrase}
+  <Gather input="dtmf" numDigits="1" action="/menu?provider=${providerId}" method="POST" timeout="15">
     <Say voice="Polly.Joanna">
-      Thank you for calling ABC Insurance. Para español, oprima el dos.
-      For claims, press 1. For prior authorization, press 2.
-      For member services, press 3. To repeat this menu, press 9.
+      ${welcomePhrase}
+    </Say>
+    <Pause length="1"/>
+    <Say voice="Polly.Joanna">
+      ${menuPhrase}
     </Say>
   </Gather>
-  <Say voice="Polly.Joanna">We didn't receive any input. Goodbye.</Say>
+  <Say voice="Polly.Joanna">${provider.phrases.goodbye || "We didn't receive any input. Goodbye."}</Say>
 `));
 });
 
-// Main Menu Router
+// Main Menu Router - Feature 114: Dynamic provider routing
 app.post('/menu', (req, res) => {
   const digit = req.body.Digits;
+  const provider = getProviderForCall(req);
+  const providerId = req.query.provider || 'random';
+
   res.type('text/xml');
 
-  switch (digit) {
-    case '1':
-      res.send(twimlResponse(`
+  // Provider's prior auth option (default to 2)
+  const priorAuthOption = provider.priorAuthOption || '2';
+  const repeatOption = provider.repeatOption || '9';
+
+  // Route based on digit matching provider's prior auth option
+  if (digit === priorAuthOption) {
+    res.send(twimlResponse(`
+        <Redirect>/prior-auth-menu?provider=${providerId}</Redirect>
+      `));
+  } else if (digit === repeatOption) {
+    res.send(twimlResponse(`
+        <Redirect>/voice?provider=${providerId}</Redirect>
+      `));
+  } else if (digit === '1' && priorAuthOption !== '1') {
+    res.send(twimlResponse(`
         <Say voice="Polly.Joanna">Claims department is currently closed. Please call back during business hours.</Say>
         <Hangup/>
       `));
-      break;
-    case '2':
-      res.send(twimlResponse(`
-        <Redirect>/prior-auth-menu</Redirect>
-      `));
-      break;
-    case '3':
-      res.send(twimlResponse(`
+  } else if (digit === '3' && priorAuthOption !== '3') {
+    res.send(twimlResponse(`
         <Say voice="Polly.Joanna">Member services is currently closed. Please call back during business hours.</Say>
         <Hangup/>
       `));
-      break;
-    case '9':
-      res.send(twimlResponse(`
-        <Redirect>/voice</Redirect>
-      `));
-      break;
-    default:
-      res.send(twimlResponse(`
+  } else {
+    res.send(twimlResponse(`
         <Say voice="Polly.Joanna">Invalid selection.</Say>
-        <Redirect>/voice</Redirect>
+        <Redirect>/voice?provider=${providerId}</Redirect>
       `));
   }
 });

@@ -13,6 +13,27 @@ export default function NewCall() {
     cptCode: '',
   });
 
+  // Phase 2: Streaming mode toggle - default to streaming (Phase 2)
+  const [streamingMode, setStreamingMode] = useState(true);
+
+  // Phase 2: Provider selector - default to Random
+  const [selectedProvider, setSelectedProvider] = useState('random');
+
+  // Provider list from docs/PHASE2-STREAMING.md Phase 8
+  const providers = [
+    { id: 'random', name: 'Random', description: 'Randomly select a provider' },
+    { id: 'abc', name: 'ABC Insurance', description: 'Standard baseline' },
+    { id: 'uhc', name: 'United Healthcare', description: 'Info order: member-id, cpt, dob' },
+    { id: 'aetna', name: 'Aetna', description: 'Voice-first ("say or press")' },
+    { id: 'cigna', name: 'Cigna', description: 'Long-winded prompts' },
+    { id: 'kaiser', name: 'Kaiser', description: 'Terse prompts' },
+    { id: 'molina', name: 'Molina', description: 'Language menu first' },
+    { id: 'anthem', name: 'Anthem', description: 'Requires NPI' },
+    { id: 'humana', name: 'Humana', description: 'Numeric IDs only' },
+    { id: 'bcbs', name: 'BCBS', description: 'Spells out numbers' },
+    { id: 'tricare', name: 'Tricare', description: 'Nested sub-menus' },
+  ];
+
   useEffect(() => {
     const fetchMembers = async () => {
       try {
@@ -37,12 +58,15 @@ export default function NewCall() {
 
     try {
       // Step 1: Create the call record
-      const response = await fetch('/api/calls', {
+      // Use /api/calls/stream for streaming mode, /api/calls for webhook mode
+      const endpoint = streamingMode ? '/api/calls/stream' : '/api/calls';
+      const response = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           member_id: formData.memberId,
           cpt_code_queried: formData.cptCode,
+          provider: selectedProvider !== 'random' ? selectedProvider : undefined,
         }),
       });
 
@@ -225,6 +249,65 @@ export default function NewCall() {
               </button>
             ))}
           </div>
+        </div>
+
+        {/* Phase 2: Streaming Mode Toggle */}
+        <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-slate-700/50 rounded-lg">
+          <div>
+            <label htmlFor="streamingMode" className="text-sm font-medium text-gray-700 dark:text-gray-300">
+              Streaming Mode (Phase 2)
+            </label>
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              {streamingMode
+                ? 'Uses ConversationRelay with Claude AI for intelligent IVR navigation'
+                : 'Uses webhook-based TwiML flow with regex extraction'
+              }
+            </p>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={streamingMode}
+            onClick={() => setStreamingMode(!streamingMode)}
+            disabled={submitting}
+            className={`
+              relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent
+              transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2
+              ${streamingMode ? 'bg-blue-600' : 'bg-gray-300 dark:bg-slate-600'}
+              ${submitting ? 'opacity-50 cursor-not-allowed' : ''}
+            `}
+          >
+            <span
+              className={`
+                pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0
+                transition duration-200 ease-in-out
+                ${streamingMode ? 'translate-x-5' : 'translate-x-0'}
+              `}
+            />
+          </button>
+        </div>
+
+        {/* Phase 2: Provider Selector */}
+        <div>
+          <label htmlFor="provider" className="form-label">
+            IVR Provider Profile
+          </label>
+          <select
+            id="provider"
+            className="form-select"
+            value={selectedProvider}
+            onChange={(e) => setSelectedProvider(e.target.value)}
+            disabled={submitting}
+          >
+            {providers.map((provider) => (
+              <option key={provider.id} value={provider.id}>
+                {provider.name} {provider.id !== 'random' ? `- ${provider.description}` : ''}
+              </option>
+            ))}
+          </select>
+          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+            Select a specific insurance IVR variation to test, or Random for variety
+          </p>
         </div>
 
         {/* Submit Button */}

@@ -290,11 +290,20 @@ class MessageHandler:
         )
 
         # Check confidence and handle retries
+        # Phase 2: When confidence < 60%, send DTMF 9 to request IVR repeat
         if decision.confidence < context.confidence_threshold:
             if not context.should_retry(decision.confidence):
                 logger.warning("Max uncertainty reached - marking call failed")
                 context.mark_failed("Too many uncertain responses")
                 return WebSocketResponse.end()
+            # Low confidence but retries remain - send DTMF 9 to request repeat
+            logger.info(f"Low confidence ({decision.confidence}) - sending DTMF 9 to request repeat")
+            context.add_agent_entry(
+                text="[Requesting repeat - low confidence]",
+                action_type="dtmf",
+                confidence=decision.confidence
+            )
+            return WebSocketResponse.send_digits("9")
 
         # Convert decision to response
         if decision.type == ActionType.DTMF:
@@ -324,8 +333,9 @@ class MessageHandler:
 
         elif decision.type == ActionType.UNCERTAIN:
             context.increment_uncertain()
-            # For uncertain, we might ask to repeat
-            return WebSocketResponse.text("I'm sorry, could you please repeat that?")
+            # Phase 2: Send DTMF 9 to request IVR repeat (most IVRs use 9 for "repeat")
+            logger.info("Uncertain decision - sending DTMF 9 to request repeat")
+            return WebSocketResponse.send_digits("9")
 
         return None
 

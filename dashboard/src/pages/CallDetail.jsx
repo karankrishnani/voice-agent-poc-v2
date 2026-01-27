@@ -141,35 +141,89 @@ export default function CallDetail() {
 
       {/* Transcript Viewer */}
       <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700">
-        <div className="px-6 py-4 border-b border-gray-200 dark:border-slate-700">
+        <div className="px-6 py-4 border-b border-gray-200 dark:border-slate-700 flex items-center justify-between">
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Conversation Transcript</h3>
+          {call.mode && (
+            <span className={`text-xs px-2 py-1 rounded-full ${
+              call.mode === 'streaming'
+                ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/50 dark:text-purple-300'
+                : call.mode === 'webhook'
+                  ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300'
+                  : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400'
+            }`}>
+              {call.mode} mode
+            </span>
+          )}
         </div>
         <div className="p-6 space-y-3 max-h-[500px] overflow-y-auto">
+          {call.transcript?.length === 0 && (
+            <p className="text-gray-500 dark:text-gray-400 text-center py-8">No transcript available</p>
+          )}
           {call.transcript?.map((turn, index) => {
-            const isIvr = turn.speaker?.toLowerCase() === 'ivr';
+            // Handle both speaker formats: "ivr"/"agent" and "IVR"/"Agent"
+            const speaker = turn.speaker?.toLowerCase() || '';
+            const isIvr = speaker === 'ivr';
+            const isAgent = speaker === 'agent';
+            const isSystem = speaker === 'system';
+
+            // Determine action type for agents (Phase 2 streaming format)
+            const actionType = turn.action_type || turn.type;
+            const confidence = turn.confidence;
+
             return (
             <div
               key={index}
               className={`p-4 rounded-lg ${
                 isIvr
                   ? 'transcript-ivr'
-                  : 'transcript-agent'
+                  : isAgent
+                    ? 'transcript-agent'
+                    : 'bg-gray-50 dark:bg-slate-700/30'
               }`}
             >
               <div className="flex items-center justify-between mb-1">
-                <span className={`text-xs font-medium uppercase ${
-                  isIvr
-                    ? 'text-gray-500 dark:text-gray-400'
-                    : 'text-blue-600 dark:text-blue-400'
-                }`}>
-                  {isIvr ? '🤖 IVR' : '🎙️ Agent'}
+                <div className="flex items-center gap-2">
+                  <span className={`text-xs font-medium uppercase ${
+                    isIvr
+                      ? 'text-gray-500 dark:text-gray-400'
+                      : isAgent
+                        ? 'text-blue-600 dark:text-blue-400'
+                        : 'text-gray-400 dark:text-gray-500'
+                  }`}>
+                    {isIvr ? '🤖 IVR' : isAgent ? '🎙️ Agent' : '⚙️ System'}
+                  </span>
+                  {actionType && actionType !== 'speak' && (
+                    <span className="text-xs px-1.5 py-0.5 rounded bg-gray-200 dark:bg-slate-600 text-gray-600 dark:text-gray-300">
+                      {actionType}
+                    </span>
+                  )}
+                  {confidence !== undefined && confidence !== null && (
+                    <span className={`text-xs px-1.5 py-0.5 rounded ${
+                      confidence >= 0.8
+                        ? 'bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-300'
+                        : confidence >= 0.6
+                          ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/50 dark:text-yellow-300'
+                          : 'bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-300'
+                    }`}>
+                      {Math.round(confidence * 100)}%
+                    </span>
+                  )}
+                </div>
+                <span className="text-xs text-gray-400">
+                  {turn.timestamp && (typeof turn.timestamp === 'string'
+                    ? turn.timestamp.includes('T')
+                      ? new Date(turn.timestamp).toLocaleTimeString()
+                      : turn.timestamp
+                    : ''
+                  )}
                 </span>
-                <span className="text-xs text-gray-400">{turn.timestamp}</span>
               </div>
-              {turn.type === 'dtmf' ? (
+              {actionType === 'dtmf' || turn.type === 'dtmf' ? (
                 <span className="transcript-dtmf">{turn.text}</span>
               ) : (
-                <p className="text-gray-900 dark:text-white">{turn.text}</p>
+                <p className={`${isSystem ? 'text-gray-500 dark:text-gray-400 text-sm italic' : 'text-gray-900 dark:text-white'}`}>
+                  {turn.text}
+                </p>
               )}
             </div>
           );

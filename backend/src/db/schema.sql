@@ -36,8 +36,9 @@ CREATE TABLE IF NOT EXISTS calls (
     member_id TEXT NOT NULL,
     cpt_code_queried TEXT,
     call_sid TEXT,                    -- Twilio call SID
+    mode TEXT DEFAULT 'webhook' CHECK(mode IN ('webhook', 'streaming', 'simulation')),  -- Phase 2: call mode
     status TEXT NOT NULL CHECK(status IN ('initiated', 'in_progress', 'completed', 'failed')),
-    outcome TEXT CHECK(outcome IN ('auth_found', 'auth_not_found', 'error', 'timeout')),
+    outcome TEXT CHECK(outcome IN ('auth_found', 'auth_not_found', 'error', 'timeout', 'agent_error')),
     extracted_auth_number TEXT,
     extracted_status TEXT,
     extracted_valid_through TEXT,

@@ -26,6 +26,7 @@ class ExtractionData(BaseModel):
     valid_through: Optional[str] = None
     denial_reason: Optional[str] = None
     transcript: Optional[List[Dict[str, str]]] = None
+    failure_reason: Optional[str] = None  # Feature 112: max_uncertain_exceeded, max_menu_retries, etc.
 
 
 class BackendClient:
@@ -186,6 +187,53 @@ class BackendClient:
         import asyncio
         return asyncio.run(self.post_extraction(call_id, extraction))
 
+    async def post_failure(
+        self,
+        call_id: str,
+        reason: str,
+        transcript: Optional[List[Dict[str, str]]] = None
+    ) -> Dict[str, Any]:
+        """
+        Feature 112: Post call failure with specific reason.
+
+        Failure reasons:
+        - max_uncertain_exceeded: Too many low-confidence responses
+        - max_menu_retries: Failed to navigate menu after 3 attempts
+        - max_info_retries: Failed to provide info after 2 attempts
+        - ivr_timeout: No response from IVR
+        - agent_error: Internal agent error
+
+        Args:
+            call_id: The call ID
+            reason: Specific failure reason
+            transcript: Partial conversation transcript
+
+        Returns:
+            Response from backend
+        """
+        url = f"{self.base_url}/api/calls/{call_id}/failure"
+        payload = {
+            "reason": reason,
+            "transcript": transcript
+        }
+        # Remove None values
+        payload = {k: v for k, v in payload.items() if v is not None}
+
+        logger.warning(f"Posting failure for call {call_id}: {reason}")
+
+        try:
+            response = await self.client.post(url, json=payload)
+            response.raise_for_status()
+            result = response.json()
+            logger.info(f"Failure recorded: {result.get('message')}")
+            return result
+        except httpx.HTTPStatusError as e:
+            logger.error(f"Backend error: {e.response.status_code} - {e.response.text}")
+            raise
+        except Exception as e:
+            logger.error(f"Failed to post failure: {e}")
+            raise
+
 
 # Singleton instance for convenience
 _client: Optional[BackendClient] = None
@@ -230,3 +278,23 @@ async def post_extraction_to_backend(
         transcript=transcript
     )
     return await client.post_extraction(call_id, extraction)
+
+
+async def post_failure_to_backend(
+    call_id: str,
+    reason: str,
+    transcript: List[Dict[str, str]] = None
+) -> Dict[str, Any]:
+    """
+    Feature 112: Convenience function to post call failure.
+
+    Args:
+        call_id: The call ID
+        reason: Failure reason (max_uncertain_exceeded, max_menu_retries, etc.)
+        transcript: Partial conversation transcript
+
+    Returns:
+        Backend response
+    """
+    client = get_backend_client()
+    return await client.post_failure(call_id, reason, transcript)

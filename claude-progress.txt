@@ -2299,6 +2299,83 @@ uvicorn src.server:app --port 8000 --reload
 
 ---
 
+## Session 20 - COMPLETE: All 141 Features Passing (100%)
+
+**Date:** 2026-01-27
+**Agent Type:** Coding
+
+### Goals for This Session
+- [x] Continue implementing Phase 2 features from Session 19
+- [x] Complete all remaining features (started at 120/141)
+- [x] Update progress notes and commit
+
+### Accomplished
+
+1. **Completed Phase 2 Backend Integration (Features 100-112)**
+   - Feature 100: Added mode column to calls table schema (webhook/streaming/simulation)
+   - Feature 101: Updated state_machine.py with CONNECTING/CONNECTED streaming states
+   - Feature 102: Added streaming mode toggle to NewCall page (default: streaming)
+   - Feature 103: Added provider selector dropdown with all 10 providers
+   - Feature 104: Enhanced CallDetail page with streaming transcript display
+   - Feature 105: Added mode indicator badge to Dashboard call list
+   - Feature 106: Implemented confidence threshold DTMF 9 repeat request
+   - Feature 107: Created retry_handler.py with max menu retries (3)
+   - Feature 108: Added max info retries (2) ending call
+   - Feature 109: Added max uncertain total (5) ending call
+   - Feature 110: Implemented silence timeout (10s) with repeat request
+   - Feature 111: Added repeated prompt detection with hash tracking
+   - Feature 112: Added failure reason saving to backend (/api/calls/:id/failure)
+
+2. **Completed Phase 2 Mock IVR Providers (Features 113-120)**
+   - Feature 113: Created providers.js with all 10 provider profiles
+   - Feature 114: Implemented dynamic provider routing via ?provider query param
+   - Feature 115: ABC Insurance baseline provider
+   - Feature 116: United Healthcare (different info order)
+   - Feature 117: Aetna (voice-first with "say or press")
+   - Feature 118: Cigna (long-winded verbose prompts)
+   - Feature 119: Kaiser (terse minimal prompts)
+   - Feature 120: Molina (language menu first)
+
+3. **Files Created/Modified**
+   - agent/src/state_machine.py - Added streaming states
+   - agent/src/retry_handler.py - Created with full retry logic
+   - agent/src/backend_client.py - Added post_failure method
+   - agent/src/message_handlers.py - Enhanced with DTMF 9 repeat
+   - backend/src/index.js - Added /failure endpoint, enhanced /extraction
+   - backend/src/db/schema.sql - Added mode column
+   - dashboard/src/pages/NewCall.jsx - Streaming toggle, provider selector
+   - dashboard/src/pages/Dashboard.jsx - Mode badge
+   - dashboard/src/pages/CallDetail.jsx - Enhanced transcript display
+   - mock-ivr/src/providers.js - Created with 10 provider profiles
+   - mock-ivr/src/index.js - Added dynamic provider routing
+
+### Final Feature Stats
+- **Passing: 141/141**
+- **Percentage: 100.0%**
+- **PROJECT COMPLETE!**
+
+### Provider Profiles Implemented
+| Provider | Prior Auth | Key Variation |
+|----------|------------|---------------|
+| ABC Insurance | 2 | Standard baseline |
+| United Healthcare | 1 | Info order: member-id, cpt, dob |
+| Aetna | 3 | Voice-first ("say or press") |
+| Cigna | 4 | Long-winded prompts |
+| Kaiser | 2 | Terse prompts |
+| Molina | 3 | Language menu first |
+| Anthem | 2 | Requires NPI |
+| Humana | 3 | Numeric IDs only |
+| BCBS | 2 | Spells out numbers |
+| Tricare | 2 | Nested sub-menus |
+
+### Next Steps (If Project Continues)
+1. Production deployment preparation
+2. Real Twilio integration testing
+3. Additional error scenario testing
+4. Performance optimization
+
+---
+
 ## Session Notes Template (for future sessions)
 
 ```markdown

@@ -14,11 +14,14 @@ class CallState(Enum):
 
     IDLE = auto()
     DIALING = auto()
+    CONNECTING = auto()  # WebSocket connecting (Phase 2 streaming)
+    CONNECTED = auto()   # WebSocket connected (Phase 2 streaming)
     NAVIGATING_MENU = auto()
     PROVIDING_INFO = auto()
     WAITING_RESPONSE = auto()
     ON_HOLD = auto()
     EXTRACTING_RESULT = auto()
+    EXTRACTING_DATA = auto()  # Alias for EXTRACTING_RESULT
     CALL_COMPLETE = auto()
     CALL_FAILED = auto()
 
@@ -26,11 +29,15 @@ class CallState(Enum):
 # Valid state transitions
 VALID_TRANSITIONS: Dict[CallState, List[CallState]] = {
     CallState.IDLE: [CallState.DIALING],
-    CallState.DIALING: [CallState.NAVIGATING_MENU, CallState.CALL_FAILED],
+    CallState.DIALING: [CallState.CONNECTING, CallState.NAVIGATING_MENU, CallState.CALL_FAILED],
+    CallState.CONNECTING: [CallState.CONNECTED, CallState.CALL_FAILED],  # Phase 2 streaming
+    CallState.CONNECTED: [CallState.NAVIGATING_MENU, CallState.CALL_FAILED],  # Phase 2 streaming
     CallState.NAVIGATING_MENU: [
         CallState.PROVIDING_INFO,
         CallState.WAITING_RESPONSE,
         CallState.ON_HOLD,
+        CallState.EXTRACTING_RESULT,
+        CallState.EXTRACTING_DATA,
         CallState.CALL_FAILED,
     ],
     CallState.PROVIDING_INFO: [
@@ -42,6 +49,7 @@ VALID_TRANSITIONS: Dict[CallState, List[CallState]] = {
         CallState.NAVIGATING_MENU,
         CallState.ON_HOLD,
         CallState.EXTRACTING_RESULT,
+        CallState.EXTRACTING_DATA,
         CallState.CALL_FAILED,
     ],
     CallState.ON_HOLD: [
@@ -50,6 +58,7 @@ VALID_TRANSITIONS: Dict[CallState, List[CallState]] = {
         CallState.CALL_FAILED,
     ],
     CallState.EXTRACTING_RESULT: [CallState.CALL_COMPLETE, CallState.CALL_FAILED],
+    CallState.EXTRACTING_DATA: [CallState.CALL_COMPLETE, CallState.CALL_FAILED],  # Alias
     CallState.CALL_COMPLETE: [],  # Terminal state
     CallState.CALL_FAILED: [],  # Terminal state
 }

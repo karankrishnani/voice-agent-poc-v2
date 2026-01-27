@@ -22,6 +22,23 @@ function StatusBadge({ status }) {
   );
 }
 
+// Mode badge component (Phase 2)
+function ModeBadge({ mode }) {
+  const styles = {
+    streaming: 'bg-purple-100 text-purple-700 dark:bg-purple-900/50 dark:text-purple-300',
+    webhook: 'bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300',
+    simulation: 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400',
+  };
+
+  if (!mode) return null;
+
+  return (
+    <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${styles[mode] || styles.simulation}`}>
+      {mode}
+    </span>
+  );
+}
+
 // Stat card component
 function StatCard({ title, value, icon, color }) {
   return (
@@ -164,6 +181,7 @@ export default function Dashboard() {
                   </div>
                 </div>
                 <div className="flex items-center space-x-4">
+                  <ModeBadge mode={call.mode} />
                   <StatusBadge status={call.outcome || call.status} />
                   <span className="text-sm text-gray-500 dark:text-gray-400">
                     {new Date(call.created_at).toLocaleDateString()}
