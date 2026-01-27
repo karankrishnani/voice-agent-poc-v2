@@ -67,6 +67,4 @@ agent/recordings/
 # Twilio credentials (extra safety)
 twilio-credentials.json
 
-# Feature tracking (development only)
-features.db
 LOOM_SCRIPT.md
