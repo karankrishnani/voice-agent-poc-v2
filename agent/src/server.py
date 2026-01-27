@@ -7,26 +7,39 @@ for improved IVR navigation with Claude-based decision making.
 See docs/PHASE2-STREAMING.md for architecture details.
 
 Endpoints:
-- GET  /          - Health check
-- GET  /health    - Health check with status details
-- WS   /ws        - WebSocket endpoint for ConversationRelay
-- POST /twiml     - TwiML endpoint for Twilio to fetch call instructions
+- GET  /              - Health check
+- GET  /health        - Health check with status details
+- GET  /twiml/{call_id} - TwiML endpoint for Twilio (Feature 83)
+- POST /outbound-call - Initiate outbound Twilio call (Feature 84)
+- WS   /ws            - WebSocket endpoint for ConversationRelay
 """
 
 import os
 import json
 import asyncio
+import uuid
 from typing import Dict, Any, Optional
 from datetime import datetime
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, Response
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, Response, HTTPException
 from fastapi.responses import HTMLResponse, PlainTextResponse
 from loguru import logger
 from pydantic import BaseModel
 from dotenv import load_dotenv
+from twilio.rest import Client as TwilioClient
+from twilio.base.exceptions import TwilioRestException
 
 # Load environment variables
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '..', '..', '.env'))
+
+# Initialize Twilio client (optional - only if credentials are configured)
+twilio_client: Optional[TwilioClient] = None
+TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
+TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
+TWILIO_PHONE_NUMBER = os.getenv("TWILIO_PHONE_NUMBER")
+
+if TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN:
+    twilio_client = TwilioClient(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
 
 # Configure logging
 logger.add(
@@ -58,6 +71,23 @@ class SessionContext(BaseModel):
     connected_at: datetime = datetime.now()
 
 
+class OutboundCallRequest(BaseModel):
+    """Request body for initiating an outbound call."""
+    member_id: str
+    cpt_code: str
+    date_of_birth: str
+    ivr_phone_number: Optional[str] = None  # Override target phone number
+
+
+class OutboundCallResponse(BaseModel):
+    """Response body for outbound call initiation."""
+    call_id: str
+    call_sid: str
+    status: str
+    twiml_url: str
+    message: str
+
+
 # ============ REST Endpoints ============
 
 @app.get("/")
@@ -79,12 +109,129 @@ async def health():
         "status": "healthy",
         "timestamp": datetime.now().isoformat(),
         "active_sessions": len(active_sessions),
+        "twilio_configured": twilio_client is not None,
         "environment": {
             "anthropic_key": "configured" if os.getenv("ANTHROPIC_API_KEY") else "missing",
             "backend_url": os.getenv("BACKEND_URL", "http://localhost:3001"),
             "websocket_url": os.getenv("AGENT_WEBSOCKET_URL", "not set")
         }
     }
+
+
+@app.post("/outbound-call", response_model=OutboundCallResponse)
+async def initiate_outbound_call(request: OutboundCallRequest):
+    """
+    Feature 84: Initiate an outbound call via Twilio.
+
+    Creates a Twilio call with TwiML URL pointing to our ConversationRelay endpoint.
+    The call will connect to the IVR and use our WebSocket for real-time voice handling.
+
+    See docs/PHASE2-STREAMING.md Data Flow section for architecture details.
+
+    Args:
+        request: OutboundCallRequest with member_id, cpt_code, date_of_birth
+
+    Returns:
+        OutboundCallResponse with call_id, call_sid, status, twiml_url
+
+    Raises:
+        HTTPException 503: If Twilio is not configured
+        HTTPException 500: If Twilio API call fails
+    """
+    logger.info(f"Outbound call request: member={request.member_id}, cpt={request.cpt_code}")
+
+    # Check if Twilio is configured
+    if not twilio_client:
+        logger.error("Twilio client not configured - missing credentials")
+        raise HTTPException(
+            status_code=503,
+            detail="Twilio is not configured. Set TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN."
+        )
+
+    # Generate a unique call ID for this session
+    call_id = str(uuid.uuid4())
+
+    # Get target phone number (IVR to call)
+    ivr_phone_number = request.ivr_phone_number or os.getenv("IVR_PHONE_NUMBER")
+    if not ivr_phone_number:
+        raise HTTPException(
+            status_code=400,
+            detail="No IVR phone number provided and IVR_PHONE_NUMBER env var not set"
+        )
+
+    # Get our public URL for TwiML (must be accessible by Twilio)
+    agent_public_url = os.getenv("AGENT_PUBLIC_URL", os.getenv("AGENT_WEBHOOK_URL", "http://localhost:8000"))
+    twiml_url = f"{agent_public_url}/twiml/{call_id}"
+    status_callback_url = f"{agent_public_url}/call-status/{call_id}"
+
+    logger.info(f"Creating Twilio call: to={ivr_phone_number}, from={TWILIO_PHONE_NUMBER}")
+    logger.info(f"TwiML URL: {twiml_url}")
+    logger.info(f"Status callback: {status_callback_url}")
+
+    try:
+        # Create the outbound call via Twilio
+        call = twilio_client.calls.create(
+            to=ivr_phone_number,
+            from_=TWILIO_PHONE_NUMBER,
+            url=twiml_url,
+            status_callback=status_callback_url,
+            status_callback_event=["initiated", "ringing", "answered", "completed"],
+            status_callback_method="POST",
+            record=True  # Record the call for debugging
+        )
+
+        logger.info(f"Twilio call created: sid={call.sid}, status={call.status}")
+
+        # Store call metadata in active sessions for later WebSocket connection
+        active_sessions[call_id] = {
+            "call_sid": call.sid,
+            "member_id": request.member_id,
+            "cpt_code": request.cpt_code,
+            "date_of_birth": request.date_of_birth,
+            "status": call.status,
+            "created_at": datetime.now().isoformat()
+        }
+
+        return OutboundCallResponse(
+            call_id=call_id,
+            call_sid=call.sid,
+            status=call.status,
+            twiml_url=twiml_url,
+            message=f"Call initiated successfully to {ivr_phone_number}"
+        )
+
+    except TwilioRestException as e:
+        logger.error(f"Twilio API error: {e.code} - {e.msg}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Twilio API error: {e.msg}"
+        )
+    except Exception as e:
+        logger.error(f"Unexpected error initiating call: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to initiate call: {str(e)}"
+        )
+
+
+@app.post("/call-status/{call_id}")
+async def call_status_callback(call_id: str, request: Request):
+    """
+    Twilio status callback endpoint.
+
+    Receives status updates from Twilio as the call progresses.
+    """
+    form_data = await request.form()
+    call_sid = form_data.get("CallSid")
+    call_status = form_data.get("CallStatus")
+
+    logger.info(f"Call status update: call_id={call_id}, sid={call_sid}, status={call_status}")
+
+    # Update session if it exists
+    if call_id in active_sessions:
+        active_sessions[call_id]["status"] = call_status
+
+    return {"received": True}
 
 
 @app.get("/twiml/{call_id}")
