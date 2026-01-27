@@ -2376,6 +2376,74 @@ uvicorn src.server:app --port 8000 --reload
 
 ---
 
+## Session 21 - Verification and Bug Fix
+
+**Date:** 2026-01-27
+**Agent Type:** Coding
+
+### Goals for This Session
+- [x] Verify all services running correctly
+- [x] Run regression tests on passing features
+- [x] Fix any bugs discovered during verification
+
+### Accomplished
+
+1. **Verified Project Status**
+   - Project is 100% complete: 141/141 features passing
+   - All services confirmed running on correct ports
+
+2. **Fixed Service Configuration Issues**
+   - Dashboard and backend were conflicting on port 3001
+   - Killed conflicting processes and restarted correctly:
+     - Backend: port 3001 ✅
+     - Dashboard: port 3000 ✅
+     - Mock IVR: port 3002 ✅
+
+3. **Fixed ES Module Syntax Error in Mock IVR**
+   - `providers.js` was using CommonJS `module.exports` in ES module project
+   - `index.js` was using `createRequire` hack to import
+   - Fixed by converting to proper ES module `export` syntax
+   - Fixed import in index.js to use ES module `import` statement
+
+4. **Verified End-to-End Call Flow**
+   - Tested call simulation for member ABC123456 (CPT 27447): ✅ Approved
+   - Tested call simulation for member DEF789012 (CPT 29881): ✅ Denied
+   - Full transcript displayed with IVR/Agent labels
+   - Extracted auth data correctly parsed and displayed
+
+### Issues Encountered
+- Port 3001 had Vite dev server running instead of backend API
+- Mock IVR failed to start due to ES module syntax error in providers.js
+- ECONNREFUSED when backend tried to reach Mock IVR (Mock IVR wasn't running)
+
+### Code Changes
+- `mock-ivr/src/providers.js`: Changed `module.exports` to `export`
+- `mock-ivr/src/index.js`: Changed `require()` to ES module `import`
+
+### Current Feature Stats
+- **Passing:** 141/141
+- **Percentage:** 100.0%
+- **Project Status:** COMPLETE
+
+### Service Startup Commands
+```bash
+# Backend (port 3001)
+node /Users/karankrishnani/projects/experiment/autonomous-coding/generations/voice-agent-poc-v2/backend/src/index.js &
+
+# Dashboard (port 3000)
+npm run dev --prefix /Users/karankrishnani/projects/experiment/autonomous-coding/generations/voice-agent-poc-v2/dashboard &
+
+# Mock IVR (port 3002)
+node /Users/karankrishnani/projects/experiment/autonomous-coding/generations/voice-agent-poc-v2/mock-ivr/src/index.js &
+```
+
+### Dashboard Statistics (Latest)
+- Total Calls: 73
+- Success Rate: 93%
+- Avg Duration: 37s
+
+---
+
 ## Session Notes Template (for future sessions)
 
 ```markdown
