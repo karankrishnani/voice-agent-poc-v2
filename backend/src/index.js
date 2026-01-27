@@ -584,6 +584,97 @@ app.post('/api/calls', async (req, res) => {
   }
 });
 
+// POST /api/calls/stream - Initiate streaming call via Python agent (Feature 97)
+// This endpoint creates a call record with mode='streaming' and forwards to Python agent
+app.post('/api/calls/stream', async (req, res) => {
+  try {
+    const { member_id, cpt_code_queried } = req.body;
+
+    if (!member_id) {
+      return res.status(400).json({ error: 'Missing required field: member_id' });
+    }
+
+    // Verify member exists
+    const member = queryOne('SELECT * FROM members WHERE member_id = ?', [member_id]);
+    if (!member) {
+      return res.status(404).json({ error: 'Member not found' });
+    }
+
+    // Generate a unique call ID
+    const callSid = `STREAM_${uuidv4()}`;
+
+    // Create call record in database with mode=streaming
+    db.run(`INSERT INTO calls (member_id, cpt_code_queried, call_sid, status, started_at)
+            VALUES (?, ?, ?, 'initiated', datetime('now'))`,
+           [member_id, cpt_code_queried || null, callSid]);
+
+    saveDatabase();
+
+    const newCall = queryOne('SELECT * FROM calls WHERE call_sid = ?', [callSid]);
+
+    // Forward to Python agent
+    const pythonAgentUrl = process.env.PYTHON_AGENT_URL || 'http://localhost:8000';
+    console.log(`Forwarding streaming call to Python agent: ${pythonAgentUrl}/outbound-call`);
+
+    try {
+      const agentResponse = await fetch(`${pythonAgentUrl}/outbound-call`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          member_id: member.member_id,
+          cpt_code: cpt_code_queried || null,
+          date_of_birth: member.date_of_birth
+        })
+      });
+
+      if (agentResponse.ok) {
+        const agentData = await agentResponse.json();
+        console.log('Python agent response:', agentData);
+
+        // Update call record with Python agent's call_sid if available
+        if (agentData.call_sid) {
+          db.run("UPDATE calls SET call_sid = ? WHERE id = ?", [agentData.call_sid, newCall.id]);
+          saveDatabase();
+        }
+
+        res.status(201).json({
+          ...newCall,
+          mode: 'streaming',
+          agent_call_id: agentData.call_id,
+          agent_call_sid: agentData.call_sid,
+          twiml_url: agentData.twiml_url
+        });
+      } else {
+        const errorText = await agentResponse.text();
+        console.error('Python agent error:', errorText);
+
+        // Update call status to failed
+        db.run("UPDATE calls SET status = 'failed', outcome = 'agent_error' WHERE id = ?", [newCall.id]);
+        saveDatabase();
+
+        res.status(500).json({
+          error: 'Python agent failed to initiate call',
+          details: errorText
+        });
+      }
+    } catch (agentError) {
+      console.error('Failed to reach Python agent:', agentError.message);
+
+      // Python agent not available - return the call record anyway
+      res.status(201).json({
+        ...newCall,
+        mode: 'streaming',
+        warning: 'Python agent not reachable - call record created but call not initiated',
+        agent_error: agentError.message
+      });
+    }
+
+  } catch (error) {
+    console.error('Error creating streaming call:', error);
+    res.status(500).json({ error: 'Failed to initiate streaming call' });
+  }
+});
+
 // PUT /api/calls/:id - Update call
 app.put('/api/calls/:id', (req, res) => {
   try {
