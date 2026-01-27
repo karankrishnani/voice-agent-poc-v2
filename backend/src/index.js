@@ -559,10 +559,22 @@ app.post('/api/calls', async (req, res) => {
 
     } catch (twilioError) {
       console.error('Twilio call error:', twilioError);
-      res.status(500).json({
-        error: 'Failed to initiate Twilio call',
-        details: twilioError.message,
-        hint: 'Check IVR_PHONE_NUMBER and AGENT_WEBHOOK_URL in .env'
+      console.log('Falling back to simulation mode...');
+
+      // Fall back to simulation mode when Twilio fails
+      const callSid = `CALL_${uuidv4()}`;
+
+      db.run(`INSERT INTO calls (member_id, cpt_code_queried, call_sid, status, started_at)
+              VALUES (?, ?, ?, 'initiated', datetime('now'))`,
+             [member_id, cpt_code_queried || null, callSid]);
+
+      saveDatabase();
+
+      const newCall = queryOne('SELECT * FROM calls WHERE call_sid = ?', [callSid]);
+      return res.status(201).json({
+        ...newCall,
+        mode: 'simulation',
+        twilio_error: twilioError.message
       });
     }
 

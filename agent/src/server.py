@@ -87,10 +87,55 @@ async def health():
     }
 
 
+@app.get("/twiml/{call_id}")
+async def twiml_get_endpoint(call_id: str):
+    """
+    GET TwiML endpoint for Twilio to fetch call instructions.
+
+    Feature 83: Returns valid TwiML with ConversationRelay configuration.
+
+    Args:
+        call_id: The call ID for context/logging
+
+    Returns:
+        TwiML that connects the call to our WebSocket via ConversationRelay.
+        Must include Deepgram STT, ElevenLabs TTS, and dtmfDetection.
+    """
+    logger.info(f"GET TwiML request for call_id: {call_id}")
+
+    # Get WebSocket URL from environment
+    websocket_url = os.getenv("AGENT_WEBSOCKET_URL", "ws://localhost:8000/ws")
+
+    # Generate TwiML with ConversationRelay
+    # Feature 83 requirements:
+    # - <Connect><ConversationRelay> structure
+    # - transcriptionProvider=deepgram
+    # - ttsProvider=elevenlabs
+    # - dtmfDetection=true
+    twiml = f"""<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Connect>
+        <ConversationRelay
+            url="{websocket_url}"
+            voice="Polly.Matthew"
+            language="en-US"
+            transcriptionProvider="deepgram"
+            speechModel="nova-2"
+            ttsProvider="elevenlabs"
+            interruptible="true"
+            dtmfDetection="true">
+            <Parameter name="call_id" value="{call_id}"/>
+        </ConversationRelay>
+    </Connect>
+</Response>"""
+
+    return Response(content=twiml, media_type="application/xml")
+
+
 @app.post("/twiml")
 async def twiml_endpoint(request: Request):
     """
-    TwiML endpoint for Twilio to fetch call instructions.
+    POST TwiML endpoint for Twilio to fetch call instructions (legacy support).
 
     Returns TwiML that connects the call to our WebSocket via ConversationRelay.
     """
@@ -98,7 +143,7 @@ async def twiml_endpoint(request: Request):
     form_data = await request.form()
     call_sid = form_data.get("CallSid", "unknown")
 
-    logger.info(f"TwiML request for CallSid: {call_sid}")
+    logger.info(f"POST TwiML request for CallSid: {call_sid}")
 
     # Get WebSocket URL from environment
     websocket_url = os.getenv("AGENT_WEBSOCKET_URL", "ws://localhost:8000/ws")
