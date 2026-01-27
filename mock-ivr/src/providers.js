@@ -313,7 +313,7 @@ function getProviderList() {
   }));
 }
 
-module.exports = {
+export {
   providers,
   getProvider,
   getProviderIds,

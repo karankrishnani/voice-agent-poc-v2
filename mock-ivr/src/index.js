@@ -1,12 +1,8 @@
 import express from 'express';
 import dotenv from 'dotenv';
-import { createRequire } from 'module';
+import { getProvider, getRandomProvider, getProviderList } from './providers.js';
 
 dotenv.config();
-
-// Import providers (CommonJS module)
-const require = createRequire(import.meta.url);
-const { getProvider, getRandomProvider, getProviderList } = require('./providers.js');
 
 const app = express();
 const PORT = process.env.MOCK_IVR_PORT || 3002;
