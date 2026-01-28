@@ -118,7 +118,122 @@ The ~200ms latency is acceptable for IVR interactions where natural pauses exist
 └─────────────┘
 ```
 
-### Data Flow
+### Network Connectivity Diagram
+
+```mermaid
+flowchart TB
+    subgraph LOCAL["🖥️ Your Machine"]
+        DASH["Dashboard :3000"]
+        BACK["Backend :3001"]
+        AGENT["Python Agent :8000"]
+    end
+
+    subgraph NGROK["🌐 Ngrok Tunnel"]
+        TUNNEL["abc123.ngrok-free.app"]
+    end
+
+    subgraph TWILIO["☁️ Twilio Cloud"]
+        CALL["Step 1: calls.create"]
+        TWIML["Step 2: GET /twiml"]
+        RELAY["Step 3: ConversationRelay"]
+        STT["Deepgram STT"]
+        TTS["ElevenLabs TTS"]
+    end
+
+    subgraph PHONE["📞 Phone Network"]
+        IVR["Insurance IVR"]
+    end
+
+    DASH --> BACK
+    BACK --> AGENT
+    AGENT -.-> TUNNEL
+    TUNNEL <--> TWILIO
+    CALL --> TWIML --> RELAY
+    RELAY --> STT
+    RELAY --> TTS
+    RELAY <--> IVR
+```
+
+### WebSocket Message Flow
+
+```mermaid
+sequenceDiagram
+    participant D as 🖥️ Dashboard
+    participant B as ⚙️ Backend
+    participant A as 🤖 Agent
+    participant T as ☁️ Twilio
+    participant I as 📞 IVR
+
+    D->>B: POST /api/calls/stream
+    B->>A: POST /outbound-call
+    A->>T: calls.create with TwiML URL
+    T->>A: GET /twiml/call_id
+    A-->>T: TwiML with ConversationRelay
+    T->>I: Dial IVR phone
+    I-->>T: Connected
+    T->>A: WebSocket connect
+    A-->>T: Accepted
+
+    Note over I,A: IVR Navigation Loop
+    I->>T: Audio - Press 2 for prior auth
+    T->>A: prompt - Press 2...
+    A->>T: sendDigits - 2
+    T->>I: DTMF tone 2
+
+    Note over I,A: Authorization Found
+    I->>T: Audio - Auth PA2024 approved
+    T->>A: prompt - Auth PA2024...
+    A->>B: POST extraction
+    A->>T: end call
+    T->>I: Hangup
+```
+
+### Required Environment Variables
+
+```mermaid
+flowchart LR
+    subgraph NGROK_URLS["🌐 Ngrok URLs"]
+        APU["AGENT_PUBLIC_URL"]
+        AWU["AGENT_WEBSOCKET_URL"]
+    end
+
+    subgraph TWILIO_CFG["📞 Twilio Config"]
+        SID["TWILIO_ACCOUNT_SID"]
+        TOK["TWILIO_AUTH_TOKEN"]
+        PHN["TWILIO_PHONE_NUMBER"]
+        IVR_NUM["IVR_PHONE_NUMBER"]
+    end
+
+    subgraph AI_KEYS["🤖 AI Service Keys"]
+        DG["DEEPGRAM_API_KEY"]
+        EL["ELEVENLABS_API_KEY"]
+        AN["ANTHROPIC_API_KEY"]
+    end
+```
+
+### Startup Sequence
+
+```bash
+# Terminal 1: Start ngrok for Python Agent
+ngrok http 8000
+# Copy the https URL (e.g., https://abc123.ngrok-free.app)
+
+# Update .env with ngrok URL
+AGENT_PUBLIC_URL=https://abc123.ngrok-free.app
+AGENT_WEBSOCKET_URL=wss://abc123.ngrok-free.app/ws
+
+# Terminal 2: Start Python Agent
+cd agent && source venv/bin/activate
+uvicorn src.server:app --host 0.0.0.0 --port 8000
+
+# Terminal 3: Start Backend
+cd backend && npm run dev
+
+# Terminal 4: Start Dashboard
+cd dashboard && npm run dev
+```
+
+### Data Flow (Summary)
 
 ```
 1. Dashboard → POST /api/calls/stream → Backend
