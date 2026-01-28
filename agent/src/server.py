@@ -259,17 +259,39 @@ async def twiml_get_endpoint(call_id: str):
     # - transcriptionProvider=deepgram
     # - ttsProvider=elevenlabs
     # - dtmfDetection=true
+    # Minimal TwiML - use Twilio's default STT/TTS (Google + Polly)
     twiml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
     <Connect>
         <ConversationRelay
             url="{websocket_url}"
-            voice="Polly.Matthew"
-            language="en-US"
-            transcriptionProvider="deepgram"
-            speechModel="nova-2"
-            ttsProvider="elevenlabs"
-            interruptible="true"
+            dtmfDetection="true">
+            <Parameter name="call_id" value="{call_id}"/>
+        </ConversationRelay>
+    </Connect>
+</Response>"""
+
+    return Response(content=twiml, media_type="application/xml")
+
+
+@app.post("/twiml/{call_id}")
+async def twiml_post_endpoint(call_id: str, request: Request):
+    """
+    POST TwiML endpoint for Twilio to fetch call instructions.
+
+    Twilio often uses POST for TwiML requests. This handles the same as GET.
+    """
+    logger.info(f"POST TwiML request for call_id: {call_id}")
+
+    # Get WebSocket URL from environment
+    websocket_url = os.getenv("AGENT_WEBSOCKET_URL", "ws://localhost:8000/ws")
+
+    # Minimal TwiML - use Twilio's default STT/TTS (Google + Polly)
+    twiml = f"""<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Connect>
+        <ConversationRelay
+            url="{websocket_url}"
             dtmfDetection="true">
             <Parameter name="call_id" value="{call_id}"/>
         </ConversationRelay>
@@ -295,18 +317,12 @@ async def twiml_endpoint(request: Request):
     # Get WebSocket URL from environment
     websocket_url = os.getenv("AGENT_WEBSOCKET_URL", "ws://localhost:8000/ws")
 
-    # Generate TwiML with ConversationRelay
+    # Minimal TwiML - use Twilio's default STT/TTS (Google + Polly)
     twiml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
     <Connect>
         <ConversationRelay
             url="{websocket_url}"
-            voice="Polly.Matthew"
-            language="en-US"
-            transcriptionProvider="deepgram"
-            speechModel="nova-2"
-            ttsProvider="elevenlabs"
-            interruptible="true"
             dtmfDetection="true">
             <Parameter name="call_sid" value="{call_sid}"/>
         </ConversationRelay>
