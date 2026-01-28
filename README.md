@@ -188,20 +188,44 @@ cd mock-ivr && npm run dev
 
 ### 4. Set Up ngrok for Webhooks
 
-Twilio needs to reach your local servers. Start ngrok:
+Twilio needs to reach your local servers. Create an `ngrok.yml` config file in the project root:
 
-```bash
-# Expose the backend (for agent webhooks)
-ngrok http 3001
+```yaml
+# ngrok.yml
+version: "2"
+authtoken: YOUR_NGROK_AUTH_TOKEN  # Get from https://dashboard.ngrok.com/get-started/your-authtoken
+tunnels:
+  agent:
+    addr: 8000    # Python agent (Phase 2 streaming)
+    proto: http
+  mock-ivr:
+    addr: 3002    # Mock IVR server
+    proto: http
 ```
 
-Copy the HTTPS URL (e.g., `https://abc123.ngrok.io`) and update `.env`:
+To get your auth token:
+1. Sign up at https://ngrok.com (free tier works)
+2. Go to https://dashboard.ngrok.com/get-started/your-authtoken
+3. Copy your auth token into `ngrok.yml`
+
+Start all tunnels at once:
 
 ```bash
-AGENT_WEBHOOK_URL=https://abc123.ngrok.io
+ngrok start --all --config ngrok.yml
 ```
 
-Restart the backend after updating `.env`.
+This gives you two public URLs. Update `.env` with them:
+
+```bash
+# Agent tunnel URL (for ConversationRelay WebSocket)
+AGENT_PUBLIC_URL=https://xxxx.ngrok-free.app
+AGENT_WEBSOCKET_URL=wss://xxxx.ngrok-free.app/ws
+
+# Mock IVR tunnel URL (configure in Twilio Console)
+# Use the mock-ivr URL as the webhook for IVR_PHONE_NUMBER
+```
+
+Restart the backend/agent after updating `.env`.
 
 ### 5. Configure Twilio Phone Numbers
 
@@ -215,13 +239,7 @@ For the IVR phone number, configure in Twilio Console:
 - Click the IVR number
 - Under "Voice Configuration", set:
   - **When a call comes in**: Webhook
-  - **URL**: `https://your-ngrok-url.ngrok.io/voice` (pointing to mock-ivr on port 3002, or same ngrok if proxied)
-
-**Alternative:** Run a second ngrok for the Mock IVR:
-```bash
-ngrok http 3002  # In another terminal
-```
-Then set that URL as the webhook for your IVR phone number.
+  - **URL**: Your mock-ivr ngrok URL + `/voice` (e.g., `https://yyyy.ngrok-free.app/voice`)
 
 ### 6. Test It
 
