@@ -241,26 +241,21 @@ async def twiml_get_endpoint(call_id: str):
     GET TwiML endpoint for Twilio to fetch call instructions.
 
     Feature 83: Returns valid TwiML with ConversationRelay configuration.
+    Only passes call_id to ConversationRelay - session data is looked up
+    server-side from active_sessions when WebSocket connects.
 
     Args:
         call_id: The call ID for context/logging
 
     Returns:
         TwiML that connects the call to our WebSocket via ConversationRelay.
-        Must include Deepgram STT, ElevenLabs TTS, and dtmfDetection.
     """
     logger.info(f"GET TwiML request for call_id: {call_id}")
 
     # Get WebSocket URL from environment
     websocket_url = os.getenv("AGENT_WEBSOCKET_URL", "ws://localhost:8000/ws")
 
-    # Generate TwiML with ConversationRelay
-    # Feature 83 requirements:
-    # - <Connect><ConversationRelay> structure
-    # - transcriptionProvider=deepgram
-    # - ttsProvider=elevenlabs
-    # - dtmfDetection=true
-    # Minimal TwiML - use Twilio's default STT/TTS (Google + Polly)
+    # Only pass call_id - session data looked up server-side from active_sessions
     twiml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
     <Connect>
@@ -281,13 +276,14 @@ async def twiml_post_endpoint(call_id: str, request: Request):
     POST TwiML endpoint for Twilio to fetch call instructions.
 
     Twilio often uses POST for TwiML requests. This handles the same as GET.
+    Only passes call_id - session data looked up server-side from active_sessions.
     """
     logger.info(f"POST TwiML request for call_id: {call_id}")
 
     # Get WebSocket URL from environment
     websocket_url = os.getenv("AGENT_WEBSOCKET_URL", "ws://localhost:8000/ws")
 
-    # Minimal TwiML - use Twilio's default STT/TTS (Google + Polly)
+    # Only pass call_id - session data looked up server-side from active_sessions
     twiml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
     <Connect>
@@ -365,13 +361,24 @@ async def websocket_endpoint(websocket: WebSocket):
             logger.debug(f"Received: {msg_type} - {json.dumps(message, indent=2)[:500]}")
 
             # Extract session_id from setup message or use existing
+            # Also look up session data from active_sessions for setup messages
+            session_data = None
             if msg_type == "setup":
                 session_id = message.get("callSid", f"session_{datetime.now().timestamp()}")
                 logger.info(f"Setup received for session: {session_id}")
 
+                # Look up call_id from customParameters, then get session data from active_sessions
+                custom_params = message.get("customParameters", {})
+                call_id = custom_params.get("call_id")
+                if call_id:
+                    session_data = active_sessions.get(call_id, {})
+                    logger.info(f"Looked up session data for call_id={call_id}: {session_data}")
+                else:
+                    logger.warning("No call_id in customParameters - session data will be empty")
+
             # Use MessageHandler to process all message types
             if message_handler:
-                response, context = await message_handler.handle_message(data, session_id)
+                response, context = await message_handler.handle_message(data, session_id, session_data)
 
                 # Record activity for silence timeout tracking
                 if retry_handler and context:

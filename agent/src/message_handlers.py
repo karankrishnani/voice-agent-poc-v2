@@ -95,7 +95,8 @@ class MessageHandler:
     async def handle_message(
         self,
         message_json: str,
-        session_id: str = None
+        session_id: str = None,
+        session_data: Dict[str, Any] = None
     ) -> Tuple[Optional[WebSocketResponse], ConversationContext]:
         """
         Handle a WebSocket message and return a response.
@@ -103,6 +104,7 @@ class MessageHandler:
         Args:
             message_json: Raw JSON string from WebSocket
             session_id: Optional session ID for context lookup
+            session_data: Optional session data from active_sessions (for setup messages)
 
         Returns:
             Tuple of (response to send, updated context)
@@ -114,26 +116,27 @@ class MessageHandler:
         # Check if handler is async (prompt handler) or sync
         import asyncio
         if asyncio.iscoroutinefunction(handler_method):
-            return await handler_method(message, session_id)
-        return handler_method(message, session_id)
+            return await handler_method(message, session_id, session_data)
+        return handler_method(message, session_id, session_data)
 
     def _handle_setup(
         self,
         message: WebSocketMessage,
-        session_id: str = None
+        session_id: str = None,
+        session_data: Dict[str, Any] = None
     ) -> Tuple[Optional[WebSocketResponse], ConversationContext]:
         """
-        Feature 90: Handle setup message and extract customParameters.
+        Feature 90: Handle setup message and extract call context.
+
+        Session data is looked up server-side from active_sessions using call_id,
+        with fallback to customParameters for backwards compatibility.
 
         Setup message structure:
         {
             "type": "setup",
             "callSid": "CA...",
             "customParameters": {
-                "call_id": "...",
-                "member_id": "...",
-                "cpt_code": "...",
-                "date_of_birth": "..."
+                "call_id": "..."
             }
         }
         """
@@ -142,15 +145,20 @@ class MessageHandler:
 
         logger.info(f"Setup received - CallSid: {call_sid}")
         logger.info(f"Custom parameters: {custom_params}")
+        logger.info(f"Session data from active_sessions: {session_data}")
 
-        # Create conversation context from parameters
+        # Use session_data (from active_sessions) with fallback to customParameters
+        # This allows the server to look up member data without passing it over the wire
+        session_data = session_data or {}
+
+        # Create conversation context - prefer session_data, fall back to customParameters
         context = ConversationContext.create(
             call_id=custom_params.get("call_id", call_sid),
-            member_id=custom_params.get("member_id", ""),
-            cpt_code=custom_params.get("cpt_code", ""),
-            date_of_birth=custom_params.get("date_of_birth", ""),
+            member_id=session_data.get("member_id") or custom_params.get("member_id", ""),
+            cpt_code=session_data.get("cpt_code") or custom_params.get("cpt_code", ""),
+            date_of_birth=session_data.get("date_of_birth") or custom_params.get("date_of_birth", ""),
             call_sid=call_sid,
-            provider_name=custom_params.get("provider_name")
+            provider_name=session_data.get("provider_name") or custom_params.get("provider_name")
         )
 
         # Transition to connected state
@@ -166,7 +174,8 @@ class MessageHandler:
     async def _handle_prompt(
         self,
         message: WebSocketMessage,
-        session_id: str = None
+        session_id: str = None,
+        session_data: Dict[str, Any] = None
     ) -> Tuple[Optional[WebSocketResponse], ConversationContext]:
         """
         Handle prompt (transcribed speech) message.
@@ -219,7 +228,8 @@ class MessageHandler:
     def _handle_dtmf(
         self,
         message: WebSocketMessage,
-        session_id: str = None
+        session_id: str = None,
+        session_data: Dict[str, Any] = None
     ) -> Tuple[Optional[WebSocketResponse], ConversationContext]:
         """
         Handle DTMF message (inbound digit from IVR).
@@ -243,7 +253,8 @@ class MessageHandler:
     def _handle_interrupted(
         self,
         message: WebSocketMessage,
-        session_id: str = None
+        session_id: str = None,
+        session_data: Dict[str, Any] = None
     ) -> Tuple[Optional[WebSocketResponse], ConversationContext]:
         """Handle interrupted message (agent speech was cut off)."""
         context = self.contexts.get(session_id)
@@ -257,7 +268,8 @@ class MessageHandler:
     def _handle_error(
         self,
         message: WebSocketMessage,
-        session_id: str = None
+        session_id: str = None,
+        session_data: Dict[str, Any] = None
     ) -> Tuple[Optional[WebSocketResponse], ConversationContext]:
         """Handle error message from ConversationRelay."""
         error_description = message.data.get("description", "Unknown error")
@@ -274,7 +286,8 @@ class MessageHandler:
     def _handle_unknown(
         self,
         message: WebSocketMessage,
-        session_id: str = None
+        session_id: str = None,
+        session_data: Dict[str, Any] = None
     ) -> Tuple[Optional[WebSocketResponse], ConversationContext]:
         """Handle unknown message type."""
         logger.warning(f"Unknown message type: {message.type}")
