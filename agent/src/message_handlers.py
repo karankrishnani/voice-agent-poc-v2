@@ -91,7 +91,7 @@ class MessageHandler:
         self.navigator = navigator or ClaudeNavigator()
         self.contexts: Dict[str, ConversationContext] = {}
 
-    def handle_message(
+    async def handle_message(
         self,
         message_json: str,
         session_id: str = None
@@ -110,6 +110,10 @@ class MessageHandler:
         logger.debug(f"Handling message type: {message.type}")
 
         handler_method = getattr(self, f"_handle_{message.type}", self._handle_unknown)
+        # Check if handler is async (prompt handler) or sync
+        import asyncio
+        if asyncio.iscoroutinefunction(handler_method):
+            return await handler_method(message, session_id)
         return handler_method(message, session_id)
 
     def _handle_setup(
@@ -158,7 +162,7 @@ class MessageHandler:
         logger.info(f"Context created: call_id={context.call_id}, member_id={context.member_id}")
         return None, context
 
-    def _handle_prompt(
+    async def _handle_prompt(
         self,
         message: WebSocketMessage,
         session_id: str = None
@@ -188,8 +192,8 @@ class MessageHandler:
         logger.info(f"IVR said: {voice_prompt}")
         context.add_ivr_entry(voice_prompt)
 
-        # Use Claude to decide response
-        decision = self.navigator.decide_sync(
+        # Use Claude to decide response (async)
+        decision = await self.navigator.decide(
             ivr_prompt=voice_prompt,
             member_id=context.member_id,
             cpt_code=context.cpt_code,

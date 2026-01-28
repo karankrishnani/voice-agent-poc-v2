@@ -29,6 +29,11 @@ from dotenv import load_dotenv
 from twilio.rest import Client as TwilioClient
 from twilio.base.exceptions import TwilioRestException
 
+# Import Claude-based message handling (Feature 85, 90)
+from .message_handlers import MessageHandler, WebSocketResponse
+from .retry_handler import RetryHandler
+from .context import ConversationContext, CallState
+
 # Load environment variables
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '..', '..', '.env'))
 
@@ -56,19 +61,12 @@ app = FastAPI(
     version="2.0.0"
 )
 
-# Store active WebSocket sessions
+# Store active WebSocket sessions (for call metadata before WebSocket connects)
 active_sessions: Dict[str, Dict[str, Any]] = {}
 
-
-class SessionContext(BaseModel):
-    """Context for an active voice session."""
-    call_id: str
-    member_id: Optional[str] = None
-    cpt_code: Optional[str] = None
-    date_of_birth: Optional[str] = None
-    state: str = "CONNECTED"
-    transcript: list = []
-    connected_at: datetime = datetime.now()
+# Global handlers for Claude-based IVR navigation (initialized at startup)
+message_handler: Optional[MessageHandler] = None
+retry_handler: Optional[RetryHandler] = None
 
 
 class OutboundCallRequest(BaseModel):
@@ -105,11 +103,14 @@ async def root():
 @app.get("/health")
 async def health():
     """Detailed health check endpoint."""
+    active_context_count = len(message_handler.contexts) if message_handler else 0
     return {
         "status": "healthy",
         "timestamp": datetime.now().isoformat(),
-        "active_sessions": len(active_sessions),
+        "active_sessions": active_context_count,
         "twilio_configured": twilio_client is not None,
+        "claude_handler_ready": message_handler is not None,
+        "retry_handler_ready": retry_handler is not None,
         "environment": {
             "anthropic_key": "configured" if os.getenv("ANTHROPIC_API_KEY") else "missing",
             "backend_url": os.getenv("BACKEND_URL", "http://localhost:3001"),
@@ -339,12 +340,16 @@ async def websocket_endpoint(websocket: WebSocket):
     """
     WebSocket endpoint for Twilio ConversationRelay.
 
+    Uses Claude-based MessageHandler for intelligent IVR navigation (Feature 85, 90).
+
     Handles bidirectional communication:
     - Receives: setup, prompt (transcribed speech), dtmf, interrupted, error
     - Sends: text (TTS), sendDigits (DTMF), end
 
     See: https://www.twilio.com/docs/voice/conversationrelay/websocket-messages
     """
+    global message_handler, retry_handler
+
     await websocket.accept()
     session_id = None
 
@@ -359,153 +364,44 @@ async def websocket_endpoint(websocket: WebSocket):
             msg_type = message.get("type", "unknown")
             logger.debug(f"Received: {msg_type} - {json.dumps(message, indent=2)[:500]}")
 
+            # Extract session_id from setup message or use existing
             if msg_type == "setup":
-                # Connection setup - extract call parameters
                 session_id = message.get("callSid", f"session_{datetime.now().timestamp()}")
-                custom_params = message.get("customParameters", {})
-
                 logger.info(f"Setup received for session: {session_id}")
-                logger.info(f"Custom parameters: {custom_params}")
 
-                # Create session context
-                active_sessions[session_id] = {
-                    "context": SessionContext(
-                        call_id=custom_params.get("call_id", session_id),
-                        member_id=custom_params.get("member_id"),
-                        cpt_code=custom_params.get("cpt_code"),
-                        date_of_birth=custom_params.get("date_of_birth")
-                    ),
-                    "websocket": websocket
-                }
+            # Use MessageHandler to process all message types
+            if message_handler:
+                response, context = await message_handler.handle_message(data, session_id)
 
-                # No response needed for setup - wait for IVR to speak first
-                logger.info(f"Session {session_id} initialized, waiting for IVR prompt")
+                # Record activity for silence timeout tracking
+                if retry_handler and context:
+                    retry_handler.record_activity(context.call_id)
 
-            elif msg_type == "prompt":
-                # Received transcribed speech from IVR
-                voice_prompt = message.get("voicePrompt", "")
-                logger.info(f"IVR said: {voice_prompt}")
-
-                if session_id and session_id in active_sessions:
-                    session = active_sessions[session_id]
-                    session["context"].transcript.append({
-                        "speaker": "IVR",
-                        "text": voice_prompt,
-                        "timestamp": datetime.now().isoformat()
-                    })
-
-                    # Process the prompt and decide response
-                    response = await process_ivr_prompt(voice_prompt, session["context"])
-
-                    if response:
-                        logger.info(f"Sending response: {response}")
-                        await websocket.send_text(json.dumps(response))
-
-            elif msg_type == "dtmf":
-                # DTMF digit received from IVR (inbound)
-                digit = message.get("digit", "")
-                logger.info(f"DTMF received: {digit}")
-
-            elif msg_type == "interrupted":
-                # Our speech was interrupted
-                logger.info("Agent speech was interrupted")
-
-            elif msg_type == "error":
-                # Error from ConversationRelay
-                error_msg = message.get("description", "Unknown error")
-                logger.error(f"ConversationRelay error: {error_msg}")
-
+                # Send response if one was generated
+                if response:
+                    response_json = response.to_json()
+                    logger.info(f"Sending response: {response_json}")
+                    await websocket.send_text(response_json)
             else:
-                logger.warning(f"Unknown message type: {msg_type}")
+                # Fallback if handler not initialized (shouldn't happen)
+                logger.error("MessageHandler not initialized - cannot process message")
 
     except WebSocketDisconnect:
         logger.info(f"WebSocket disconnected for session: {session_id}")
     except Exception as e:
         logger.error(f"WebSocket error: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
     finally:
-        # Clean up session
-        if session_id and session_id in active_sessions:
-            del active_sessions[session_id]
+        # Clean up session context and retry tracking
+        if session_id:
+            if message_handler:
+                message_handler.remove_context(session_id)
+            if retry_handler:
+                context = message_handler.get_context(session_id) if message_handler else None
+                if context:
+                    retry_handler.reset_all_tracking(context.call_id)
             logger.info(f"Session {session_id} cleaned up")
-
-
-async def process_ivr_prompt(prompt: str, context: SessionContext) -> Optional[Dict[str, Any]]:
-    """
-    Process an IVR prompt and determine the appropriate response.
-
-    This is a simplified version - Phase 2 will add Claude-based decision making.
-
-    Args:
-        prompt: The transcribed IVR speech
-        context: The current session context
-
-    Returns:
-        Response message to send via WebSocket, or None
-    """
-    prompt_lower = prompt.lower()
-
-    # Log to transcript
-    context.transcript.append({
-        "speaker": "Agent",
-        "action": "processing",
-        "prompt": prompt,
-        "timestamp": datetime.now().isoformat()
-    })
-
-    # Main menu detection - press 2 for prior authorization
-    if "prior authorization" in prompt_lower and "press 2" in prompt_lower:
-        context.state = "IN_MENU"
-        context.transcript.append({"speaker": "Agent", "text": "*pressed 2*"})
-        return {"type": "sendDigits", "digits": "2"}
-
-    # Prior auth submenu - press 1 for status check
-    if "check" in prompt_lower and "status" in prompt_lower and "press 1" in prompt_lower:
-        context.state = "PROVIDING_INFO"
-        context.transcript.append({"speaker": "Agent", "text": "*pressed 1*"})
-        return {"type": "sendDigits", "digits": "1"}
-
-    if "existing authorization" in prompt_lower and "press 1" in prompt_lower:
-        context.state = "PROVIDING_INFO"
-        context.transcript.append({"speaker": "Agent", "text": "*pressed 1*"})
-        return {"type": "sendDigits", "digits": "1"}
-
-    # Member ID prompt
-    if "member id" in prompt_lower and context.member_id:
-        context.transcript.append({"speaker": "Agent", "text": context.member_id})
-        # Use text for alphanumeric, DTMF for numeric-only
-        if context.member_id.isdigit():
-            return {"type": "sendDigits", "digits": context.member_id}
-        else:
-            # Spell out for clarity
-            spelled = " ".join(list(context.member_id))
-            return {"type": "text", "token": spelled}
-
-    # Date of birth prompt
-    if "date of birth" in prompt_lower and context.date_of_birth:
-        # Convert YYYY-MM-DD to MMDDYYYY
-        if "-" in context.date_of_birth:
-            parts = context.date_of_birth.split("-")
-            dob_digits = parts[1] + parts[2] + parts[0]  # MMDDYYYY
-        else:
-            dob_digits = context.date_of_birth
-        context.transcript.append({"speaker": "Agent", "text": dob_digits})
-        return {"type": "sendDigits", "digits": dob_digits}
-
-    # CPT code prompt
-    if ("cpt" in prompt_lower or "procedure code" in prompt_lower) and context.cpt_code:
-        context.state = "WAITING_RESPONSE"
-        context.transcript.append({"speaker": "Agent", "text": context.cpt_code})
-        return {"type": "sendDigits", "digits": context.cpt_code}
-
-    # Authorization result detection
-    if "authorization" in prompt_lower and any(s in prompt_lower for s in ["approved", "denied", "pending", "not found"]):
-        context.state = "COMPLETE"
-        logger.info(f"Authorization result detected: {prompt}")
-        # End the call after receiving the result
-        return {"type": "end"}
-
-    # No action needed - continue listening
-    return None
 
 
 # ============ Application Startup ============
@@ -513,6 +409,8 @@ async def process_ivr_prompt(prompt: str, context: SessionContext) -> Optional[D
 @app.on_event("startup")
 async def startup_event():
     """Initialize application on startup."""
+    global message_handler, retry_handler
+
     logger.info("=" * 50)
     logger.info("Insurance Voice AI Agent - Phase 2")
     logger.info("=" * 50)
@@ -526,22 +424,41 @@ async def startup_event():
     # Create logs directory if it doesn't exist
     os.makedirs("logs", exist_ok=True)
 
+    # Initialize Claude-based message handler (Feature 85, 90)
+    try:
+        message_handler = MessageHandler()
+        retry_handler = RetryHandler()
+        logger.info("Claude MessageHandler and RetryHandler initialized successfully")
+    except Exception as e:
+        logger.error(f"Failed to initialize Claude handlers: {e}")
+        logger.warning("Server will start but Claude-based navigation will not work")
+        # Don't raise - allow server to start for health checks etc.
+
 
 @app.on_event("shutdown")
 async def shutdown_event():
     """Cleanup on application shutdown."""
+    global message_handler, retry_handler
+
     logger.info("Shutting down Insurance Voice AI Agent")
 
-    # Close any active sessions
+    # Clean up all MessageHandler contexts
+    if message_handler:
+        for session_id in list(message_handler.contexts.keys()):
+            try:
+                context = message_handler.contexts[session_id]
+                if retry_handler:
+                    retry_handler.reset_all_tracking(context.call_id)
+                message_handler.remove_context(session_id)
+            except Exception as e:
+                logger.error(f"Error cleaning up session {session_id}: {e}")
+
+    # Clean up any remaining active_sessions (legacy)
     for session_id in list(active_sessions.keys()):
         try:
-            session = active_sessions[session_id]
-            if "websocket" in session:
-                await session["websocket"].close()
+            del active_sessions[session_id]
         except Exception as e:
             logger.error(f"Error closing session {session_id}: {e}")
-        finally:
-            del active_sessions[session_id]
 
     logger.info("Shutdown complete")
 
