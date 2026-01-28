@@ -6,6 +6,8 @@ This is a FRESH context window - you have no memory of previous sessions.
 This project is a **Voice AI Agent** that makes phone calls - testing requires
 telephony verification, not just browser automation.
 
+**IMPORTANT:** For detailed UI-based testing procedures, refer to `docs/TESTING-PLAYBOOK.md`.
+
 ### STEP 1: GET YOUR BEARINGS (MANDATORY)
 
 Start by orienting yourself:
@@ -58,12 +60,34 @@ This should start:
 - Backend API (port 3001)
 - Dashboard (port 3000)
 - Mock IVR server (port 3002)
-- ngrok tunnel for Twilio webhooks (if configured)
+- Python Agent (port 8000)
+- ngrok tunnels for Twilio webhooks (if configured)
 
-Verify services:
+**Manual Multi-Terminal Setup (if init.sh fails):**
+
 ```bash
-curl http://localhost:3001/health
-curl http://localhost:3000
+# Terminal 1 - Backend (Node.js)
+cd backend && npm run dev    # Port 3001
+
+# Terminal 2 - Dashboard (React)
+cd dashboard && npm run dev  # Port 3000
+
+# Terminal 3 - Mock IVR (Node.js)
+cd mock-ivr && npm run dev   # Port 3002
+
+# Terminal 4 - Python Agent
+cd agent && uvicorn src.server:app --host 0.0.0.0 --port 8000 --reload
+
+# Terminal 5 - ngrok tunnels
+ngrok start --all --config ngrok.yml
+```
+
+Verify ALL services:
+```bash
+curl http://localhost:3001/health        # Backend
+curl http://localhost:3000               # Dashboard
+curl http://localhost:3002/health        # Mock IVR
+curl http://localhost:8000/health        # Python Agent - check "claude_handler_ready": true
 ```
 
 ### STEP 3: VERIFICATION TEST (CRITICAL!)
@@ -79,6 +103,7 @@ For this voice AI project, verification means:
 - Open browser to http://localhost:3000
 - Verify pages load without errors
 - Check API calls succeed (Network tab)
+- Look for "System Online" indicator (green)
 
 **API Verification:**
 ```bash
@@ -86,6 +111,13 @@ For this voice AI project, verification means:
 curl http://localhost:3001/api/members
 curl http://localhost:3001/api/prior-auths
 curl http://localhost:3001/api/calls
+```
+
+**Python Agent Verification:**
+```bash
+curl http://localhost:8000/health
+# MUST show: "claude_handler_ready": true
+# If false, run: pip install --upgrade anthropic
 ```
 
 **Mock IVR Verification (if implemented):**
@@ -174,6 +206,8 @@ Implementation approach depends on feature type:
 
 ### STEP 6: VERIFICATION APPROACHES
 
+**See `docs/TESTING-PLAYBOOK.md` for detailed step-by-step testing procedures.**
+
 #### 6A. Dashboard Testing (Browser Automation)
 
 Use browser automation tools for the web dashboard:
@@ -186,6 +220,16 @@ browser_take_screenshot - Capture visual state
 browser_console_messages - Check for errors
 browser_network_requests - Monitor API calls
 ```
+
+**UI-Based Call Testing Procedure:**
+
+1. Navigate to http://localhost:3000
+2. Click "New Call" in navigation
+3. Select a member from dropdown (e.g., "John Smith (ABC123456)")
+4. Enter CPT code (e.g., "27447")
+5. Toggle "Streaming Mode (Phase 2)" ON
+6. Click "Start Call"
+7. Monitor status - should show "DIALING" then progress
 
 #### 6B. API Testing
 
@@ -228,30 +272,36 @@ curl -X POST http://localhost:3002/ivr/menu \
   -d "Digits=2"
 ```
 
-#### 6D. Voice Agent Testing
+#### 6D. Voice Agent Testing (UI-Based - Recommended)
 
-Test the voice agent by initiating calls:
+**Follow the detailed procedure in `docs/TESTING-PLAYBOOK.md`.**
 
-1. Start a call via API:
+**UI Test Procedure:**
+
+1. Open http://localhost:3000 in browser
+2. Click "New Call" in navigation
+3. Select a member from dropdown (e.g., "John Smith (ABC123456)")
+4. Enter CPT code (e.g., "27447")
+5. Toggle "Streaming Mode (Phase 2)" ON
+6. Click "Start Call"
+7. UI should show "DIALING" status
+
+**Monitor Python Agent Logs:**
 ```bash
-curl -X POST http://localhost:3001/api/calls \
-  -H "Content-Type: application/json" \
-  -d '{"member_id": "TEST12345", "cpt_code": "27447"}'
+# Watch for key events in Terminal 4 (Python agent)
+# Look for: "IVR said:", "Decision:", "Sending response:", "Context created"
 ```
 
-2. Monitor call progress:
-```bash
-# Poll for status
-curl http://localhost:3001/api/calls/{call_id}/status
-```
+**Verify Call Completion:**
+- Agent logs should show `status=completed` or failure reason
+- Refresh dashboard and check call in "Recent Calls"
+- Click call to see details, duration, transcript
 
-3. Verify call outcome:
-```bash
-# Get full call details with transcript
-curl http://localhost:3001/api/calls/{call_id}
-```
-
-4. Check extracted data matches expected values
+**Mock IVR Test Data Behavior:**
+- Member ID prefix `ABC*` → Approved
+- Member ID prefix `DEF*` → Denied
+- Member ID prefix `GHI*` → Pending
+- Other prefixes → Not Found
 
 ### STEP 6.5: MANDATORY VERIFICATION CHECKLIST
 
