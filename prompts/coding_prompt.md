@@ -274,6 +274,10 @@ curl -X POST http://localhost:3002/ivr/menu \
 
 #### 6D. Voice Agent Testing (UI-Based - Recommended)
 
+**CRITICAL: You MUST wait for the call to COMPLETE - do NOT move on after seeing "DIALING"!**
+
+Calls take 30-90 seconds to complete. You must verify the ENTIRE call flow.
+
 **Follow the detailed procedure in `docs/TESTING-PLAYBOOK.md`.**
 
 **UI Test Procedure:**
@@ -285,17 +289,39 @@ curl -X POST http://localhost:3002/ivr/menu \
 5. Toggle "Streaming Mode (Phase 2)" ON
 6. Click "Start Call"
 7. UI should show "DIALING" status
+8. **WAIT for call to complete** - poll status every 10 seconds until status changes
+9. Status should progress: DIALING → IN_PROGRESS → COMPLETED (or FAILED)
 
-**Monitor Python Agent Logs:**
+**Monitor Call Until Completion:**
 ```bash
-# Watch for key events in Terminal 4 (Python agent)
-# Look for: "IVR said:", "Decision:", "Sending response:", "Context created"
+# Poll call status until completed (repeat every 10 seconds)
+curl http://localhost:3001/api/calls/{call_id}
+# Look for: "status": "completed" or "status": "failed"
 ```
 
-**Verify Call Completion:**
-- Agent logs should show `status=completed` or failure reason
-- Refresh dashboard and check call in "Recent Calls"
-- Click call to see details, duration, transcript
+**Verify Complete Call (MANDATORY before marking voice features as passing):**
+1. Call status must be "completed" (not "initiated" or "in_progress")
+2. Call must have a duration > 0
+3. Transcript must contain IVR prompts AND agent responses
+4. For ABC* members: result should show "approved" authorization
+5. For DEF* members: result should show "denied"
+6. For GHI* members: result should show "pending"
+
+**Example of a COMPLETE call verification:**
+```bash
+curl http://localhost:3001/api/calls/{call_id}
+# Must show:
+# - "status": "completed"
+# - "duration": > 0 (e.g., 45)
+# - "transcript" or call events with actual IVR conversation
+# - "result" with extracted authorization data
+```
+
+**DO NOT mark voice/call features as passing if:**
+- Call is still "initiated" or "dialing"
+- Call has no duration
+- Transcript is empty or missing
+- Authorization result was not extracted
 
 **Mock IVR Test Data Behavior:**
 - Member ID prefix `ABC*` → Approved
@@ -330,12 +356,16 @@ Before marking any feature as passing:
 - [ ] All menu paths are reachable
 
 #### For Voice Agent Features
-- [ ] Call initiates successfully
-- [ ] Agent navigates menu correctly
+- [ ] Call initiates successfully (status: "initiated")
+- [ ] **Call COMPLETES** (status: "completed", NOT just "dialing")
+- [ ] Call has duration > 0 seconds
+- [ ] Agent navigates IVR menu correctly (DTMF tones sent)
 - [ ] Member info spoken correctly
-- [ ] Result extracted and parsed
-- [ ] Transcript logged completely
-- [ ] Call status updated in database
+- [ ] **Transcript contains BOTH IVR prompts AND agent responses**
+- [ ] Result extracted and parsed (authorization status, auth number, dates)
+- [ ] Call status updated in database to "completed"
+- [ ] For ABC* member: result shows "approved"
+- [ ] For DEF* member: result shows "denied"
 
 ### STEP 7: UPDATE FEATURE STATUS
 
