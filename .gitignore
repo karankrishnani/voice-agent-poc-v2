@@ -68,3 +68,4 @@ agent/recordings/
 twilio-credentials.json
 
 LOOM_SCRIPT.md
+ngrok.yml

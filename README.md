@@ -134,7 +134,7 @@ The POC uses Twilio's simpler built-in services intentionally—fewer moving par
 ### Prerequisites
 
 - Node.js 18+
-- A Twilio account with a phone number
+- A Twilio account with two phone numbers (see [Twilio Setup Guide](docs/TWILIO-SETUP.md))
 - ngrok (for exposing local webhooks to Twilio)
 
 ### 1. Clone and Install
