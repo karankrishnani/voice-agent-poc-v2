@@ -54,12 +54,19 @@ uvicorn src.server:app --host 0.0.0.0 --port 8000 --reload
 # Runs on http://localhost:8000
 ```
 
-**Terminal 5 - ngrok tunnel**
+**Terminal 5 - ngrok tunnels**
 ```bash
-ngrok http 8000
-# Copy the https URL to AGENT_PUBLIC_URL in .env
-# WebSocket URL is wss://xxxx.ngrok-free.app/ws
+cd /path/to/voice-agent-poc-v2
+ngrok start --all --config ngrok.yml
 ```
+
+This starts tunnels defined in the project's `ngrok.yml`:
+- `agent` → localhost:8000 (Python agent)
+- `mock-ivr` → localhost:3002 (Mock IVR)
+
+After starting, copy the agent URL to `.env`:
+- `AGENT_PUBLIC_URL=https://xxxx.ngrok-free.app`
+- `AGENT_WEBSOCKET_URL=wss://xxxx.ngrok-free.app/ws`
 
 ### 3. Verify All Services
 
