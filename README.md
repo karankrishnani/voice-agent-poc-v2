@@ -188,25 +188,16 @@ cd mock-ivr && npm run dev
 
 ### 4. Set Up ngrok for Webhooks
 
-Twilio needs to reach your local servers. Create an `ngrok.yml` config file in the project root:
+Twilio needs to reach your local servers.
 
-```yaml
-# ngrok.yml
-version: "2"
-authtoken: YOUR_NGROK_AUTH_TOKEN  # Get from https://dashboard.ngrok.com/get-started/your-authtoken
-tunnels:
-  agent:
-    addr: 8000    # Python agent (Phase 2 streaming)
-    proto: http
-  mock-ivr:
-    addr: 3002    # Mock IVR server
-    proto: http
-```
+1. Get your ngrok auth token from https://dashboard.ngrok.com/get-started/your-authtoken
+2. Add it to your `.env` file:
+   ```bash
+   NGROK_AUTHTOKEN=your_token_here
+   ```
+3. Run `./init.sh` again (or manually create `ngrok.yml`)
 
-To get your auth token:
-1. Sign up at https://ngrok.com (free tier works)
-2. Go to https://dashboard.ngrok.com/get-started/your-authtoken
-3. Copy your auth token into `ngrok.yml`
+The init script creates `ngrok.yml` with tunnels for the agent (8000) and mock-ivr (3002).
 
 Start all tunnels at once:
 

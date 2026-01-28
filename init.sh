@@ -81,6 +81,37 @@ if [ -d "agent" ] && [ -f "agent/requirements.txt" ]; then
   cd ..
 fi
 
+# Initialize ngrok.yml if not present
+if [ ! -f "ngrok.yml" ]; then
+  echo ""
+  echo "Creating ngrok.yml configuration..."
+
+  # Use NGROK_AUTHTOKEN from env if available
+  NGROK_TOKEN="${NGROK_AUTHTOKEN:-YOUR_NGROK_AUTH_TOKEN}"
+
+  cat > ngrok.yml << EOF
+version: "2"
+authtoken: ${NGROK_TOKEN}
+tunnels:
+  agent:
+    addr: 8000
+    proto: http
+  mock-ivr:
+    addr: 3002
+    proto: http
+EOF
+  echo "   Created ngrok.yml"
+
+  if [ "$NGROK_TOKEN" = "YOUR_NGROK_AUTH_TOKEN" ]; then
+    echo ""
+    echo "   ⚠️  IMPORTANT: Set NGROK_AUTHTOKEN in .env!"
+    echo "   Get your token from: https://dashboard.ngrok.com/get-started/your-authtoken"
+  else
+    echo "   Using NGROK_AUTHTOKEN from environment"
+  fi
+  echo ""
+fi
+
 # Initialize database
 echo ""
 echo "Initializing database..."
@@ -147,10 +178,11 @@ echo "   Dashboard:  http://localhost:3000"
 echo "   API:        http://localhost:3001"
 echo "   Mock IVR:   http://localhost:3002"
 echo ""
-echo "To test the Mock IVR:"
-echo "   1. Run: ngrok http 3002"
-echo "   2. Configure Twilio webhook to the ngrok URL"
-echo "   3. Call your Twilio number"
+echo "To start ngrok tunnels:"
+echo "   1. Update ngrok.yml with your auth token"
+echo "   2. Run: ngrok start --all --config ngrok.yml"
+echo "   3. Update .env with the ngrok URLs"
+echo "   4. Configure Twilio webhook to the mock-ivr ngrok URL"
 echo ""
 echo "To stop all services:"
 echo "   pkill -f 'node.*dev'"
