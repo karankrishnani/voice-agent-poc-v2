@@ -25,6 +25,7 @@ class CallState(str, Enum):
     CONNECTED = "CONNECTED"
     NAVIGATING_MENU = "NAVIGATING_MENU"
     PROVIDING_INFO = "PROVIDING_INFO"
+    AWAITING_IVR_RESULT = "AWAITING_IVR_RESULT"  # We acted, waiting for IVR response
     WAITING_RESPONSE = "WAITING_RESPONSE"
     EXTRACTING_DATA = "EXTRACTING_DATA"
     COMPLETE = "COMPLETE"
@@ -122,6 +123,10 @@ class ConversationContext:
     # Last prompt for retry logic
     last_ivr_prompt: Optional[str] = None
 
+    # Last action tracking (for AWAITING_IVR_RESULT state)
+    last_action_type: Optional[str] = None   # "dtmf" or "speak"
+    last_action_value: Optional[str] = None  # The digit/text we sent
+
     def transition_to(self, new_state: CallState) -> None:
         """
         Transition to a new call state.
@@ -132,6 +137,22 @@ class ConversationContext:
         self.previous_state = self.state
         self.state = new_state
         self.add_system_entry(f"State: {self.previous_state.value} -> {new_state.value}")
+
+    def set_last_action(self, action_type: str, value: str) -> None:
+        """
+        Set the last action taken by the agent.
+
+        Args:
+            action_type: Type of action ("dtmf" or "speak")
+            value: The value sent (digit or text)
+        """
+        self.last_action_type = action_type
+        self.last_action_value = value
+
+    def clear_last_action(self) -> None:
+        """Clear the last action tracking."""
+        self.last_action_type = None
+        self.last_action_value = None
 
     def add_ivr_entry(self, text: str) -> None:
         """

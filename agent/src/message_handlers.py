@@ -22,6 +22,7 @@ Response Types (to Twilio):
 """
 
 import json
+import re
 from typing import Optional, Dict, Any, Tuple
 from dataclasses import dataclass
 from loguru import logger
@@ -192,6 +193,17 @@ class MessageHandler:
         logger.info(f"IVR said: {voice_prompt}")
         context.add_ivr_entry(voice_prompt)
 
+        # STATE-BASED FILTERING: If awaiting IVR result, check if we should respond
+        if context.state == CallState.AWAITING_IVR_RESULT:
+            should_process = self._should_process_while_awaiting(voice_prompt, context)
+            if not should_process:
+                logger.info(f"State=AWAITING_IVR_RESULT: Buffering prompt, not responding: {voice_prompt[:50]}...")
+                return None, context
+            else:
+                logger.info(f"State=AWAITING_IVR_RESULT: New context detected, resuming processing")
+                context.transition_to(CallState.CONNECTED)
+                context.clear_last_action()
+
         # Use Claude to decide response (async)
         decision = await self.navigator.decide(
             ivr_prompt=voice_prompt,
@@ -311,11 +323,13 @@ class MessageHandler:
 
         # Convert decision to response
         if decision.type == ActionType.DTMF:
-            context.transition_to(CallState.NAVIGATING_MENU)
+            context.set_last_action("dtmf", decision.value)
+            context.transition_to(CallState.AWAITING_IVR_RESULT)
             return WebSocketResponse.send_digits(decision.value)
 
         elif decision.type == ActionType.SPEAK:
-            context.transition_to(CallState.PROVIDING_INFO)
+            context.set_last_action("speak", decision.value)
+            context.transition_to(CallState.AWAITING_IVR_RESULT)
             return WebSocketResponse.text(decision.value)
 
         elif decision.type == ActionType.EXTRACT:
@@ -342,6 +356,46 @@ class MessageHandler:
             return WebSocketResponse.send_digits("9")
 
         return None
+
+    def _should_process_while_awaiting(self, prompt: str, context: ConversationContext) -> bool:
+        """
+        Decide if we should process this prompt while in AWAITING_IVR_RESULT state.
+
+        Returns True if this looks like a new context (IVR moved on).
+        Returns False if this looks like continuation of what we just responded to.
+        """
+        prompt_lower = prompt.lower()
+
+        # After DTMF: ignore other menu options
+        if context.last_action_type == "dtmf":
+            if self._is_menu_option(prompt):
+                return False  # Still reading menu options, ignore
+            return True  # Different type of prompt, process it
+
+        # After SPEAK: check if IVR is asking for same info again (retry) or moved on
+        if context.last_action_type == "speak":
+            # If IVR moved to a DIFFERENT question, process it
+            # This is heuristic - if prompt doesn't mention what we just provided, it's new
+            last_value_keywords = self._extract_keywords(context.last_action_value)
+            prompt_mentions_same = any(kw in prompt_lower for kw in last_value_keywords)
+
+            if not prompt_mentions_same:
+                return True  # New question, process it
+            return False  # Still on same topic, wait
+
+        return True  # Default: process
+
+    def _is_menu_option(self, prompt: str) -> bool:
+        """Check if prompt is a menu option."""
+        prompt_lower = prompt.lower()
+        return bool(re.search(r'press \d|say .+ or press', prompt_lower))
+
+    def _extract_keywords(self, value: str) -> list:
+        """Extract keywords from last action value for matching."""
+        if not value:
+            return []
+        # For member ID, DOB, etc. - extract key terms
+        return [value.lower()[:3]] if value else []  # Simple: first 3 chars
 
     def get_context(self, session_id: str) -> Optional[ConversationContext]:
         """Get context for a session."""
